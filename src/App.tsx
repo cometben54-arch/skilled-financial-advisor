@@ -1,7 +1,7 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { Compass, Globe } from 'lucide-react';
 import type { Skill, PortfolioItem, AIConfig, ChatMessage, AnalysisReport } from './types';
-import { demoPortfolio } from './data/demo';
+import { demoPortfolio, getDemoReport } from './data/demo';
 import { SkillMarketplace } from './components/SkillMarketplace';
 import { PortfolioInput } from './components/PortfolioInput';
 import { ReportView } from './components/ReportView';
@@ -9,7 +9,7 @@ import { AIConfigPanel } from './components/AIConfig';
 import { ChatPanel } from './components/ChatPanel';
 import { AdminPanel, useAdminModels, useAdminSkills } from './components/AdminPanel';
 import { useI18n } from './i18n';
-import { getDemoReport } from './data/demo';
+import { generateAnalysis, sendFollowUp } from './services/ai';
 
 function App() {
   const { locale, setLocale, t } = useI18n();
@@ -34,10 +34,14 @@ function App() {
   const [report, setReport] = useState<AnalysisReport | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [loadingStep, setLoadingStep] = useState('');
+  const [generateError, setGenerateError] = useState<string | null>(null);
 
   // Chat state
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isChatResponding, setIsChatResponding] = useState(false);
+
+  // Keep a ref to the current conversation for follow-ups
+  const chatHistoryRef = useRef<{ role: 'user' | 'assistant'; content: string }[]>([]);
 
   const handleSelectSkill = useCallback((skill: Skill) => {
     setActiveSkill(skill);
@@ -70,34 +74,50 @@ function App() {
     []
   );
 
-  const handleGenerate = useCallback(() => {
+  const handleGenerate = useCallback(async () => {
+    if (!activeSkill) return;
+
     setIsGenerating(true);
     setReport(null);
     setChatMessages([]);
+    chatHistoryRef.current = [];
+    setGenerateError(null);
 
+    // Animate loading steps
     const steps = [
       t('parsingHoldings'),
-      `${t('activeSkillLabel')}${activeSkill?.name || 'Skill'}...`,
+      `${t('activeSkillLabel')}${activeSkill.nameKey ? t(activeSkill.nameKey) : activeSkill.name}...`,
       t('evaluatingRisk'),
       t('generatingRecs'),
     ];
-
-    let i = 0;
-    const interval = setInterval(() => {
-      if (i < steps.length) {
-        setLoadingStep(steps[i]);
-        i++;
-      } else {
-        clearInterval(interval);
-        setReport(getDemoReport(locale));
-        setIsGenerating(false);
-        setLoadingStep('');
+    let stepIdx = 0;
+    const stepInterval = setInterval(() => {
+      if (stepIdx < steps.length) {
+        setLoadingStep(steps[stepIdx]);
+        stepIdx++;
       }
-    }, 700);
-  }, [activeSkill, t, locale]);
+    }, 2000);
+
+    try {
+      const result = await generateAnalysis(activeSkill, portfolio, aiConfig, locale);
+      clearInterval(stepInterval);
+      setReport(result);
+    } catch (err) {
+      clearInterval(stepInterval);
+      console.warn('AI API unavailable, falling back to demo:', err);
+      setGenerateError(String(err instanceof Error ? err.message : err));
+      // Fallback to demo report
+      setReport(getDemoReport(locale));
+    } finally {
+      setIsGenerating(false);
+      setLoadingStep('');
+    }
+  }, [activeSkill, portfolio, aiConfig, locale, t]);
 
   const handleChatSend = useCallback(
-    (message: string) => {
+    async (message: string) => {
+      if (!activeSkill) return;
+
       const userMsg: ChatMessage = {
         id: `msg-${Date.now()}`,
         role: 'user',
@@ -105,12 +125,23 @@ function App() {
         timestamp: new Date(),
       };
       setChatMessages((prev) => [...prev, userMsg]);
+      chatHistoryRef.current.push({ role: 'user', content: message });
       setIsChatResponding(true);
 
-      setTimeout(() => {
-        const responseTemplate = t('demo_chatResponse') as string;
-        const response = responseTemplate.replace('{skill}', activeSkill?.name || 'current');
+      try {
+        const portfolioContext = portfolio
+          .map((p) => `${p.ticker} (${p.name}) ${p.weight}% cost:$${p.costBasis ?? '?'} current:$${p.currentPrice ?? '?'}`)
+          .join('\n');
 
+        const response = await sendFollowUp(
+          chatHistoryRef.current,
+          activeSkill.promptTemplate,
+          portfolioContext,
+          aiConfig,
+          locale,
+        );
+
+        chatHistoryRef.current.push({ role: 'assistant', content: response });
         const aiMsg: ChatMessage = {
           id: `msg-${Date.now()}-ai`,
           role: 'assistant',
@@ -118,10 +149,23 @@ function App() {
           timestamp: new Date(),
         };
         setChatMessages((prev) => [...prev, aiMsg]);
+      } catch {
+        // Fallback
+        const fallback = t('demo_chatResponse') as string;
+        const response = fallback.replace('{skill}', activeSkill.nameKey ? t(activeSkill.nameKey) : activeSkill.name);
+        chatHistoryRef.current.push({ role: 'assistant', content: response });
+        const aiMsg: ChatMessage = {
+          id: `msg-${Date.now()}-ai`,
+          role: 'assistant',
+          content: response,
+          timestamp: new Date(),
+        };
+        setChatMessages((prev) => [...prev, aiMsg]);
+      } finally {
         setIsChatResponding(false);
-      }, 1500);
+      }
     },
-    [activeSkill, t]
+    [activeSkill, portfolio, aiConfig, locale, t]
   );
 
   return (
@@ -146,7 +190,6 @@ function App() {
             {t('mode')}: <strong className="text-surface-200">{aiConfig.mode === 'quick' ? t('quick') : t('expert')}</strong>
           </span>
           <span className="w-px h-4 bg-surface-700" />
-          {/* Language toggle */}
           <button
             onClick={() => setLocale(locale === 'zh' ? 'en' : 'zh')}
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-surface-700 hover:border-primary-500 hover:bg-primary-500/10 text-surface-300 hover:text-primary-300 transition-all cursor-pointer"
@@ -159,7 +202,6 @@ function App() {
 
       {/* Main layout */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left sidebar — Skill Marketplace */}
         <aside className="w-72 shrink-0 overflow-hidden">
           <SkillMarketplace
             skills={skills}
@@ -170,7 +212,6 @@ function App() {
           />
         </aside>
 
-        {/* Center — Main content */}
         <main className="flex-1 overflow-y-auto">
           <div className="max-w-3xl mx-auto p-6 space-y-4">
             <PortfolioInput
@@ -181,6 +222,12 @@ function App() {
               isGenerating={isGenerating}
               hasReport={!!report}
             />
+
+            {generateError && report && (
+              <div className="px-4 py-2.5 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-xs text-yellow-300">
+                {t('aiFallbackNotice')}: {generateError}
+              </div>
+            )}
 
             {(isGenerating || report) && (
               <ReportView
@@ -201,13 +248,11 @@ function App() {
           </div>
         </main>
 
-        {/* Right sidebar — AI Config */}
         <aside className="w-80 shrink-0 overflow-hidden">
           <AIConfigPanel config={aiConfig} onChange={setAIConfig} adminModels={adminModels} />
         </aside>
       </div>
 
-      {/* Admin panel — bottom right gear */}
       <AdminPanel onSkillsChange={(updated) => setSkills(updated)} />
     </div>
   );
