@@ -9,7 +9,6 @@ interface ChatRequest {
   systemPrompt: string;
   userMessage: string;
   mode: 'quick' | 'expert';
-  // Optional: user's own key override
   customEndpoint?: string;
   customApiKey?: string;
   customModel?: string;
@@ -31,6 +30,35 @@ const cors = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
+const RETRYABLE_STATUS = [429, 529, 502, 503];
+const MAX_RETRIES = 3;
+
+async function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const res = await fetch(url, init);
+
+    if (res.ok || !RETRYABLE_STATUS.includes(res.status)) {
+      return res;
+    }
+
+    // Last attempt — return the error response
+    if (attempt === MAX_RETRIES) {
+      return res;
+    }
+
+    // Exponential backoff: 1s, 2s, 4s
+    const delay = Math.pow(2, attempt) * 1000;
+    await sleep(delay);
+  }
+
+  // Should never reach here, but satisfy TS
+  return fetch(url, init);
+}
+
 export const onRequest: PagesFunction<Env> = async (context) => {
   if (context.request.method === 'OPTIONS') {
     return new Response(null, { headers: cors });
@@ -47,15 +75,13 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     let endpoint: string;
     let apiKey: string;
     let modelId: string;
-    let provider = 'openai'; // default to OpenAI-compatible
+    let provider = 'openai';
 
     if (body.customEndpoint && body.customApiKey && body.customModel) {
-      // User's own key
       endpoint = body.customEndpoint;
       apiKey = body.customApiKey;
       modelId = body.customModel;
     } else {
-      // Use admin-configured default model from KV
       const configRaw = await context.env.CONFIG_KV.get('admin-config');
       if (!configRaw) {
         return new Response(JSON.stringify({ error: 'No AI model configured. Ask the admin to set up a model.' }), {
@@ -79,18 +105,12 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       provider = activeModel.provider?.toLowerCase() || 'openai';
     }
 
-    // Build the request based on provider
     const maxTokens = body.mode === 'quick' ? 2000 : 8000;
-
-    // Detect provider type from endpoint/provider name
     const isAnthropic = provider.includes('anthropic') || endpoint.includes('anthropic');
 
-    let llmResponse: Response;
-
     if (isAnthropic) {
-      // Anthropic Claude API
       const apiUrl = endpoint.replace(/\/+$/, '') + '/messages';
-      llmResponse = await fetch(apiUrl, {
+      const llmResponse = await fetchWithRetry(apiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -107,7 +127,13 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
       if (!llmResponse.ok) {
         const err = await llmResponse.text();
-        return new Response(JSON.stringify({ error: `LLM API error: ${llmResponse.status}`, detail: err }), {
+        const statusHint = llmResponse.status === 529 ? ' (API overloaded — retries exhausted)'
+          : llmResponse.status === 429 ? ' (rate limited — retries exhausted)'
+          : '';
+        return new Response(JSON.stringify({
+          error: `LLM API error: ${llmResponse.status}${statusHint}`,
+          detail: err,
+        }), {
           status: 502, headers: { 'Content-Type': 'application/json', ...cors },
         });
       }
@@ -120,9 +146,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       });
 
     } else {
-      // OpenAI-compatible API (OpenAI, DeepSeek, etc.)
       const apiUrl = endpoint.replace(/\/+$/, '') + '/chat/completions';
-      llmResponse = await fetch(apiUrl, {
+      const llmResponse = await fetchWithRetry(apiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -140,7 +165,13 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
       if (!llmResponse.ok) {
         const err = await llmResponse.text();
-        return new Response(JSON.stringify({ error: `LLM API error: ${llmResponse.status}`, detail: err }), {
+        const statusHint = llmResponse.status === 429 ? ' (rate limited — retries exhausted)'
+          : llmResponse.status === 529 ? ' (API overloaded — retries exhausted)'
+          : '';
+        return new Response(JSON.stringify({
+          error: `LLM API error: ${llmResponse.status}${statusHint}`,
+          detail: err,
+        }), {
           status: 502, headers: { 'Content-Type': 'application/json', ...cors },
         });
       }
