@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Settings, X, Plus, Trash2, Save, Lock, Cpu, BookOpen, Pencil } from 'lucide-react';
 import { useI18n } from '../i18n';
 import type { Skill } from '../types';
@@ -17,57 +17,86 @@ export interface AdminModelConfig {
 }
 
 const ADMIN_PASSWORD = 'W@ng2BO';
-const STORAGE_KEY = 'pp-admin-models';
-const SKILLS_STORAGE_KEY = 'pp-admin-skills';
+const CACHE_KEY_MODELS = 'pp-admin-models';
+const CACHE_KEY_SKILLS = 'pp-admin-skills';
+const API_URL = '/api/config';
 
-function loadAdminModels(): AdminModelConfig[] {
+// ── Shared API helpers ──
+
+async function fetchSharedConfig(): Promise<{ models: AdminModelConfig[]; skills: Skill[] | null }> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const res = await fetch(API_URL);
+    if (res.ok) {
+      const data = await res.json();
+      // Cache locally
+      if (data.models) localStorage.setItem(CACHE_KEY_MODELS, JSON.stringify(data.models));
+      if (data.skills) localStorage.setItem(CACHE_KEY_SKILLS, JSON.stringify(data.skills));
+      return data;
+    }
+  } catch {
+    // API unavailable — fall back to localStorage
+  }
+  return {
+    models: loadLocalModels(),
+    skills: loadLocalSkills(),
+  };
+}
+
+async function saveToApi(payload: { password: string; models?: AdminModelConfig[]; skills?: Skill[] }) {
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+function loadLocalModels(): AdminModelConfig[] {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY_MODELS);
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
   }
 }
 
-function saveAdminModels(models: AdminModelConfig[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(models));
-}
-
-export function useAdminModels() {
-  const [models, setModels] = useState<AdminModelConfig[]>(loadAdminModels);
-  const update = (newModels: AdminModelConfig[]) => {
-    setModels(newModels);
-    saveAdminModels(newModels);
-  };
-  return { models, update };
-}
-
-// ── Admin Skills ──
-
-function loadAdminSkills(): Skill[] | null {
+function loadLocalSkills(): Skill[] | null {
   try {
-    const raw = localStorage.getItem(SKILLS_STORAGE_KEY);
+    const raw = localStorage.getItem(CACHE_KEY_SKILLS);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
   }
 }
 
-function saveAdminSkills(skills: Skill[]) {
-  localStorage.setItem(SKILLS_STORAGE_KEY, JSON.stringify(skills));
+// ── Hooks for consumers (read shared config) ──
+
+export function useAdminModels() {
+  const [models, setModels] = useState<AdminModelConfig[]>(loadLocalModels);
+
+  useEffect(() => {
+    fetchSharedConfig().then((data) => {
+      if (data.models) setModels(data.models);
+    });
+  }, []);
+
+  return { models };
 }
 
 export function useAdminSkills() {
-  const [skills, setSkills] = useState<Skill[]>(() => {
-    return loadAdminSkills() ?? builtinSkills;
-  });
+  const [skills, setSkills] = useState<Skill[]>(() => loadLocalSkills() ?? builtinSkills);
 
-  const update = (newSkills: Skill[]) => {
-    setSkills(newSkills);
-    saveAdminSkills(newSkills);
-  };
+  useEffect(() => {
+    fetchSharedConfig().then((data) => {
+      if (data.skills) setSkills(data.skills);
+    });
+  }, []);
 
-  return { skills, update };
+  return { skills };
 }
 
 // ── Admin Panel ──
@@ -83,16 +112,44 @@ export function AdminPanel({ onSkillsChange }: { onSkillsChange: (skills: Skill[
   const [tab, setTab] = useState<AdminTab>('models');
 
   // Models state
-  const [models, setModels] = useState<AdminModelConfig[]>(loadAdminModels);
+  const [models, setModels] = useState<AdminModelConfig[]>(loadLocalModels);
   const [editingModelId, setEditingModelId] = useState<string | null>(null);
 
   // Skills state
-  const [skills, setSkills] = useState<Skill[]>(() => loadAdminSkills() ?? builtinSkills);
+  const [skills, setSkills] = useState<Skill[]>(() => loadLocalSkills() ?? builtinSkills);
   const [editingSkillId, setEditingSkillId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  // Load shared config from API on open
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchSharedConfig().then((data) => {
+        if (data.models) setModels(data.models);
+        if (data.skills) setSkills(data.skills);
+      });
+    }
+  }, [isAuthenticated]);
 
   useEffect(() => {
     onSkillsChange(skills);
   }, [skills, onSkillsChange]);
+
+  // Persist to API + localStorage
+  const persistModels = useCallback(async (updated: AdminModelConfig[]) => {
+    setModels(updated);
+    localStorage.setItem(CACHE_KEY_MODELS, JSON.stringify(updated));
+    setSaving(true);
+    await saveToApi({ password: ADMIN_PASSWORD, models: updated });
+    setSaving(false);
+  }, []);
+
+  const persistSkills = useCallback(async (updated: Skill[]) => {
+    setSkills(updated);
+    localStorage.setItem(CACHE_KEY_SKILLS, JSON.stringify(updated));
+    setSaving(true);
+    await saveToApi({ password: ADMIN_PASSWORD, skills: updated });
+    setSaving(false);
+  }, []);
 
   const handleLogin = () => {
     if (password === ADMIN_PASSWORD) {
@@ -108,15 +165,13 @@ export function AdminPanel({ onSkillsChange }: { onSkillsChange: (skills: Skill[
     const updated = models.some((m) => m.id === model.id)
       ? models.map((m) => (m.id === model.id ? model : m))
       : [...models, model];
-    setModels(updated);
-    saveAdminModels(updated);
+    persistModels(updated);
     setEditingModelId(null);
   };
 
   const handleDeleteModel = (id: string) => {
     const updated = models.filter((m) => m.id !== id);
-    setModels(updated);
-    saveAdminModels(updated);
+    persistModels(updated);
   };
 
   const handleAddModel = () => {
@@ -135,8 +190,7 @@ export function AdminPanel({ onSkillsChange }: { onSkillsChange: (skills: Skill[
 
   const handleSetDefault = (id: string) => {
     const updated = models.map((m) => ({ ...m, isDefault: m.id === id }));
-    setModels(updated);
-    saveAdminModels(updated);
+    persistModels(updated);
   };
 
   // ── Skill handlers ──
@@ -144,15 +198,13 @@ export function AdminPanel({ onSkillsChange }: { onSkillsChange: (skills: Skill[
     const updated = skills.some((s) => s.id === skill.id)
       ? skills.map((s) => (s.id === skill.id ? skill : s))
       : [...skills, skill];
-    setSkills(updated);
-    saveAdminSkills(updated);
+    persistSkills(updated);
     setEditingSkillId(null);
   };
 
   const handleDeleteSkill = (id: string) => {
     const updated = skills.filter((s) => s.id !== id);
-    setSkills(updated);
-    saveAdminSkills(updated);
+    persistSkills(updated);
   };
 
   const handleAddSkill = () => {
@@ -174,8 +226,7 @@ export function AdminPanel({ onSkillsChange }: { onSkillsChange: (skills: Skill[
   };
 
   const handleResetSkills = () => {
-    setSkills(builtinSkills);
-    saveAdminSkills(builtinSkills);
+    persistSkills(builtinSkills);
   };
 
   return (
@@ -196,6 +247,7 @@ export function AdminPanel({ onSkillsChange }: { onSkillsChange: (skills: Skill[
               <h3 className="text-sm font-bold text-surface-100 flex items-center gap-2">
                 <Settings size={16} className="text-primary-400" />
                 {t('adminSettings')}
+                {saving && <span className="text-[10px] text-primary-400 font-normal animate-pulse">{t('adminSaving')}</span>}
               </h3>
               <button
                 onClick={() => { setIsOpen(false); setIsAuthenticated(false); setPassword(''); }}

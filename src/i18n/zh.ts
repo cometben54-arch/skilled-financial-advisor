@@ -211,6 +211,7 @@ export const zh = {
   adminResetSkills: '恢复默认',
   adminSkillIcon: '图标',
   adminSkillUntitled: '未命名技能包',
+  adminSaving: '同步中...',
 
   // Report — price & detail
   currentPrice: '当前价格',
