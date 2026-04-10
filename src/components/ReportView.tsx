@@ -7,7 +7,7 @@ import {
   TrendingUp, TrendingDown, Minus, AlertTriangle,
   Copy, Share2, ChevronDown, ChevronUp, Shield,
 } from 'lucide-react';
-import type { AnalysisReport } from '../types';
+import type { AnalysisReport, PortfolioItem } from '../types';
 import { useI18n } from '../i18n';
 
 const QUOTE_KEYS = [
@@ -49,9 +49,10 @@ interface ReportViewProps {
   isExpert: boolean;
   loading: boolean;
   loadingStep?: string;
+  portfolio?: PortfolioItem[];
 }
 
-export function ReportView({ report, isExpert, loading, loadingStep }: ReportViewProps) {
+export function ReportView({ report, isExpert, loading, loadingStep, portfolio }: ReportViewProps) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(isExpert);
   const [copied, setCopied] = useState(false);
@@ -145,6 +146,54 @@ export function ReportView({ report, isExpert, loading, loadingStep }: ReportVie
           }}
         />
       </div>
+
+      {/* Holdings detail with current prices */}
+      {portfolio && portfolio.some((p) => p.currentPrice) && (
+        <div className="bg-surface-800/30 border border-surface-700/50 rounded-xl p-4">
+          <h4 className="text-xs font-semibold text-surface-300 mb-3 flex items-center gap-2">
+            <TrendingUp size={14} className="text-primary-400" />
+            {t('holdingDetail')}
+            <span className="text-[10px] text-surface-500 font-normal ml-auto">
+              {t('priceAsOf')} {new Date().toLocaleDateString()}
+            </span>
+          </h4>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-surface-500 text-[10px] border-b border-surface-700/50">
+                  <th className="text-left py-2 px-2 font-medium">{t('ticker')}</th>
+                  <th className="text-left py-2 px-2 font-medium">{t('name')}</th>
+                  <th className="text-right py-2 px-2 font-medium">{t('weightPct')}</th>
+                  <th className="text-right py-2 px-2 font-medium">{t('costBasisLabel')}</th>
+                  <th className="text-right py-2 px-2 font-medium">{t('currentPrice')}</th>
+                  <th className="text-right py-2 px-2 font-medium">{t('returnPct')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {portfolio.map((item) => {
+                  const ret = item.costBasis && item.currentPrice
+                    ? ((item.currentPrice - item.costBasis) / item.costBasis) * 100
+                    : null;
+                  return (
+                    <tr key={item.ticker} className="border-b border-surface-700/20 hover:bg-surface-800/30">
+                      <td className="py-2 px-2 font-semibold text-surface-200">{item.ticker}</td>
+                      <td className="py-2 px-2 text-surface-400">{item.name}</td>
+                      <td className="py-2 px-2 text-right text-surface-300">{item.weight}%</td>
+                      <td className="py-2 px-2 text-right text-surface-400">${item.costBasis?.toFixed(2)}</td>
+                      <td className="py-2 px-2 text-right text-surface-200 font-medium">${item.currentPrice?.toFixed(2)}</td>
+                      <td className={`py-2 px-2 text-right font-medium ${
+                        ret !== null ? (ret >= 0 ? 'text-accent-400' : 'text-red-400') : 'text-surface-500'
+                      }`}>
+                        {ret !== null ? `${ret >= 0 ? '+' : ''}${ret.toFixed(1)}%` : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Charts row */}
       <div className="grid grid-cols-2 gap-4">

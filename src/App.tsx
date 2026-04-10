@@ -1,23 +1,23 @@
 import { useState, useCallback } from 'react';
 import { Compass, Globe } from 'lucide-react';
 import type { Skill, PortfolioItem, AIConfig, ChatMessage, AnalysisReport } from './types';
-import { defaultSkills } from './data/skills';
 import { demoPortfolio } from './data/demo';
 import { SkillMarketplace } from './components/SkillMarketplace';
 import { PortfolioInput } from './components/PortfolioInput';
 import { ReportView } from './components/ReportView';
 import { AIConfigPanel } from './components/AIConfig';
 import { ChatPanel } from './components/ChatPanel';
-import { AdminPanel, useAdminModels } from './components/AdminPanel';
+import { AdminPanel, useAdminModels, useAdminSkills } from './components/AdminPanel';
 import { useI18n } from './i18n';
 import { getDemoReport } from './data/demo';
 
 function App() {
   const { locale, setLocale, t } = useI18n();
   const { models: adminModels } = useAdminModels();
+  const { skills: adminSkills } = useAdminSkills();
 
-  // Skills state
-  const [skills, setSkills] = useState<Skill[]>(defaultSkills);
+  // Skills state — initialized from admin-managed skills
+  const [skills, setSkills] = useState<Skill[]>(adminSkills);
   const [activeSkill, setActiveSkill] = useState<Skill | null>(null);
 
   // Portfolio state
@@ -188,6 +188,7 @@ function App() {
                 isExpert={aiConfig.mode === 'expert'}
                 loading={isGenerating}
                 loadingStep={loadingStep}
+                portfolio={portfolio}
               />
             )}
 
@@ -207,7 +208,7 @@ function App() {
       </div>
 
       {/* Admin panel — bottom right gear */}
-      <AdminPanel />
+      <AdminPanel onSkillsChange={(updated) => setSkills(updated)} />
     </div>
   );
 }

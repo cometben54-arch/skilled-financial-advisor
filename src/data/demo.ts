@@ -4,14 +4,14 @@ import { zh } from '../i18n/zh';
 import { en } from '../i18n/en';
 
 export const demoPortfolio: PortfolioItem[] = [
-  { ticker: 'AAPL', name: 'Apple Inc.', weight: 25, costBasis: 145.0, sector: 'Technology' },
-  { ticker: 'MSFT', name: 'Microsoft Corp.', weight: 20, costBasis: 310.0, sector: 'Technology' },
-  { ticker: 'NVDA', name: 'NVIDIA Corp.', weight: 15, costBasis: 220.0, sector: 'Technology' },
-  { ticker: 'AMZN', name: 'Amazon.com Inc.', weight: 12, costBasis: 130.0, sector: 'Consumer Discretionary' },
-  { ticker: 'JPM', name: 'JPMorgan Chase', weight: 8, costBasis: 155.0, sector: 'Financials' },
-  { ticker: 'JNJ', name: 'Johnson & Johnson', weight: 7, costBasis: 165.0, sector: 'Healthcare' },
-  { ticker: 'VTI', name: 'Vanguard Total Stock', weight: 8, costBasis: 210.0, sector: 'Broad Market ETF' },
-  { ticker: 'BND', name: 'Vanguard Total Bond', weight: 5, costBasis: 74.0, sector: 'Fixed Income' },
+  { ticker: 'AAPL', name: 'Apple Inc.', weight: 25, costBasis: 145.0, currentPrice: 198.36, sector: 'Technology' },
+  { ticker: 'MSFT', name: 'Microsoft Corp.', weight: 20, costBasis: 310.0, currentPrice: 441.20, sector: 'Technology' },
+  { ticker: 'NVDA', name: 'NVIDIA Corp.', weight: 15, costBasis: 220.0, currentPrice: 124.58, sector: 'Technology' },
+  { ticker: 'AMZN', name: 'Amazon.com Inc.', weight: 12, costBasis: 130.0, currentPrice: 198.42, sector: 'Consumer Discretionary' },
+  { ticker: 'JPM', name: 'JPMorgan Chase', weight: 8, costBasis: 155.0, currentPrice: 243.80, sector: 'Financials' },
+  { ticker: 'JNJ', name: 'Johnson & Johnson', weight: 7, costBasis: 165.0, currentPrice: 156.20, sector: 'Healthcare' },
+  { ticker: 'VTI', name: 'Vanguard Total Stock', weight: 8, costBasis: 210.0, currentPrice: 281.45, sector: 'Broad Market ETF' },
+  { ticker: 'BND', name: 'Vanguard Total Bond', weight: 5, costBasis: 74.0, currentPrice: 72.15, sector: 'Fixed Income' },
 ];
 
 export function getDemoReport(locale: Locale): AnalysisReport {
