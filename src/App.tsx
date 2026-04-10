@@ -106,8 +106,9 @@ function App() {
       clearInterval(stepInterval);
       console.warn('AI API unavailable, falling back to demo:', err);
       setGenerateError(String(err instanceof Error ? err.message : err));
-      // Fallback to demo report
-      setReport(getDemoReport(locale));
+      // Fallback to demo report — use active skill name so it doesn't always say "Buffett"
+      const skillDisplayName = activeSkill.nameKey ? t(activeSkill.nameKey) : activeSkill.name;
+      setReport(getDemoReport(locale, skillDisplayName));
     } finally {
       setIsGenerating(false);
       setLoadingStep('');

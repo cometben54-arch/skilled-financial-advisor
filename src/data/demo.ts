@@ -14,8 +14,12 @@ export const demoPortfolio: PortfolioItem[] = [
   { ticker: 'BND', name: 'Vanguard Total Bond', weight: 5, costBasis: 74.0, currentPrice: 72.15, sector: 'Fixed Income' },
 ];
 
-export function getDemoReport(locale: Locale): AnalysisReport {
+export function getDemoReport(locale: Locale, skillName?: string): AnalysisReport {
   const t = locale === 'zh' ? zh : en;
+  const name = skillName || (locale === 'zh' ? '沃伦·巴菲特的价值投资' : "Warren Buffett's value investing");
+
+  // Replace {skillName} placeholder in summary
+  const summary = (t.demo_summary as string).replace(/\{skillName\}/g, name);
 
   return {
     healthScore: 72,
@@ -37,6 +41,6 @@ export function getDemoReport(locale: Locale): AnalysisReport {
     shortTermActions: (t.demo_actions as unknown as { action: 'buy' | 'sell' | 'hold'; ticker: string; detail: string }[]).slice(),
     longTermView: t.demo_longTerm as string,
     riskWarnings: (t.demo_risks as unknown as string[]).slice(),
-    summary: t.demo_summary as string,
+    summary,
   };
 }
