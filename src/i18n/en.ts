@@ -213,6 +213,7 @@ Your portfolio is heavily tilted toward large-cap technology (60% combined weigh
   adminResetSkills: 'Reset Defaults',
   adminSkillIcon: 'Icon',
   adminSkillUntitled: 'Untitled Skill',
+  adminSaving: 'Syncing...',
 
   // Report — price & detail
   currentPrice: 'Current Price',
