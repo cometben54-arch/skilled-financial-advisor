@@ -173,4 +173,32 @@ Your portfolio is heavily tilted toward large-cap technology (60% combined weigh
   metric_diversification: 'Diversification',
   metric_incomeYield: 'Income Yield',
   metric_downsideProtection: 'Downside Protection',
+
+  // Admin panel
+  adminSettings: 'Admin Settings',
+  adminPasswordPrompt: 'Enter admin password',
+  adminPasswordPlaceholder: 'Enter password...',
+  adminLogin: 'Login',
+  adminPasswordWrong: 'Wrong password. Please try again.',
+  adminModelDesc: 'Configure default AI models and API keys. Models without API keys will not appear on the frontend.',
+  adminAddModel: 'Add Model',
+  adminNoModels: 'No models configured. Click "Add Model" to get started.',
+  adminModelName: 'Model Name',
+  adminProvider: 'Provider',
+  adminModelId: 'Model ID',
+  adminSave: 'Save',
+  adminEdit: 'Edit',
+  adminSetDefault: 'Set Default',
+
+  // Investment quotes
+  quote_1: '"Price is what you pay. Value is what you get." — Warren Buffett',
+  quote_2: '"The most important quality for an investor is temperament, not intellect." — Warren Buffett',
+  quote_3: '"Be fearful when others are greedy, and greedy when others are fearful." — Warren Buffett',
+  quote_4: '"The stock market is a device for transferring money from the impatient to the patient." — Warren Buffett',
+  quote_5: '"Knowing what you don\'t know is more useful than being brilliant." — Charlie Munger',
+  quote_6: '"Diversification is protection against ignorance." — Warren Buffett',
+  quote_7: '"Time is the friend of the wonderful business, the enemy of the mediocre." — Warren Buffett',
+  quote_8: '"In the short run the market is a voting machine, in the long run it is a weighing machine." — Benjamin Graham',
+  quote_9: '"The best investment you can make is in yourself." — Warren Buffett',
+  quote_10: '"Compound interest is the eighth wonder of the world." — Albert Einstein',
 };

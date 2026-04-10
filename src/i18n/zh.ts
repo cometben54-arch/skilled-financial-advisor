@@ -171,6 +171,34 @@ export const zh = {
   metric_diversification: '分散化',
   metric_incomeYield: '收益率',
   metric_downsideProtection: '下行保护',
+
+  // Admin panel
+  adminSettings: '管理员设置',
+  adminPasswordPrompt: '请输入管理员密码',
+  adminPasswordPlaceholder: '输入密码...',
+  adminLogin: '登录',
+  adminPasswordWrong: '密码错误，请重试',
+  adminModelDesc: '配置默认 AI 模型和 API 密钥。未配置 API 的模型不会显示在前端。',
+  adminAddModel: '添加模型',
+  adminNoModels: '暂无配置的模型。点击"添加模型"开始配置。',
+  adminModelName: '模型名称',
+  adminProvider: '提供商',
+  adminModelId: '模型 ID',
+  adminSave: '保存',
+  adminEdit: '编辑',
+  adminSetDefault: '设为默认',
+
+  // Investment quotes
+  quote_1: '"价格是你付出的，价值是你得到的。" —— 沃伦·巴菲特',
+  quote_2: '"投资中最重要的品质不是智力，而是性格。" —— 沃伦·巴菲特',
+  quote_3: '"在别人贪婪时恐惧，在别人恐惧时贪婪。" —— 沃伦·巴菲特',
+  quote_4: '"股市是将钱从没有耐心的人转移到有耐心的人手中的工具。" —— 沃伦·巴菲特',
+  quote_5: '"认识你自己的无知是知识的黎明。" —— 查理·芒格',
+  quote_6: '"分散投资是对无知的保护。" —— 沃伦·巴菲特',
+  quote_7: '"时间是优秀企业的朋友，平庸企业的敌人。" —— 沃伦·巴菲特',
+  quote_8: '"市场短期是投票机，长期是称重机。" —— 本杰明·格雷厄姆',
+  quote_9: '"最好的投资就是投资自己。" —— 沃伦·巴菲特',
+  quote_10: '"复利是世界第八大奇迹。" —— 阿尔伯特·爱因斯坦',
 } as const;
 
 export type TranslationKey = keyof typeof zh;
