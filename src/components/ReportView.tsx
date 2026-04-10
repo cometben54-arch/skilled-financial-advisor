@@ -8,6 +8,7 @@ import {
   Copy, Share2, ChevronDown, ChevronUp, Shield,
 } from 'lucide-react';
 import type { AnalysisReport } from '../types';
+import { useI18n } from '../i18n';
 
 interface ReportViewProps {
   report: AnalysisReport;
@@ -17,6 +18,7 @@ interface ReportViewProps {
 }
 
 export function ReportView({ report, isExpert, loading, loadingStep }: ReportViewProps) {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(isExpert);
   const [copied, setCopied] = useState(false);
 
@@ -26,14 +28,14 @@ export function ReportView({ report, isExpert, loading, loadingStep }: ReportVie
         <div className="flex flex-col items-center gap-4">
           <div className="relative">
             <div className="w-16 h-16 border-4 border-primary-500/20 border-t-primary-500 rounded-full animate-spin" />
-            <Sparkle className="absolute inset-0 m-auto text-primary-400" />
+            <SparkleIcon className="absolute inset-0 m-auto text-primary-400" />
           </div>
           <div className="text-center">
-            <p className="text-sm font-medium text-surface-200">{loadingStep || 'Analyzing portfolio...'}</p>
-            <p className="text-[11px] text-surface-500 mt-1">This may take a moment in Expert mode</p>
+            <p className="text-sm font-medium text-surface-200">{loadingStep || t('analyzingPortfolio')}</p>
+            <p className="text-[11px] text-surface-500 mt-1">{t('expertModeHint')}</p>
           </div>
           <div className="w-full max-w-xs space-y-2">
-            {['Parsing holdings...', 'Evaluating risk metrics...', 'Generating recommendations...'].map((step, i) => (
+            {[t('parsingHoldings'), t('evaluatingRisk'), t('generatingRecs')].map((step, i) => (
               <div key={step} className="flex items-center gap-2 text-xs">
                 <div className={`w-2 h-2 rounded-full ${i === 0 ? 'bg-accent-400 animate-pulse' : i === 1 ? 'bg-primary-400 animate-pulse' : 'bg-surface-600'}`} />
                 <span className={i < 2 ? 'text-surface-300' : 'text-surface-500'}>{step}</span>
@@ -45,8 +47,10 @@ export function ReportView({ report, isExpert, loading, loadingStep }: ReportVie
     );
   }
 
+  if (!report) return null;
+
   const handleCopy = () => {
-    const text = `Portfolio Analysis Report\n\nHealth Score: ${report.healthScore}/100\n\nSummary: ${report.summary}\n\nShort-term Actions:\n${report.shortTermActions.map((a) => `- ${a.action.toUpperCase()} ${a.ticker}: ${a.detail}`).join('\n')}\n\nLong-term View:\n${report.longTermView}\n\nRisk Warnings:\n${report.riskWarnings.map((w) => `- ${w}`).join('\n')}`;
+    const text = `${t('analysisReport')}\n\n${t('healthScore')}: ${report.healthScore}/100\n\n${report.summary}\n\n${t('shortTermActions')}:\n${report.shortTermActions.map((a) => `- ${a.action.toUpperCase()} ${a.ticker}: ${a.detail}`).join('\n')}\n\n${t('longTermView')}:\n${report.longTermView}\n\n${t('riskWarnings')}:\n${report.riskWarnings.map((w) => `- ${w}`).join('\n')}`;
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -66,6 +70,13 @@ export function ReportView({ report, isExpert, loading, loadingStep }: ReportVie
       ? '#fbbf24'
       : '#f87171';
 
+  const scoreLabel =
+    report.healthScore >= 80
+      ? t('strong')
+      : report.healthScore >= 60
+      ? t('moderate')
+      : t('needsWork');
+
   return (
     <div className="space-y-4">
       {/* Summary */}
@@ -73,7 +84,7 @@ export function ReportView({ report, isExpert, loading, loadingStep }: ReportVie
         <div className="flex items-start justify-between mb-3">
           <h3 className="text-sm font-bold text-surface-100 flex items-center gap-2">
             <Shield size={16} className="text-primary-400" />
-            Analysis Report
+            {t('analysisReport')}
           </h3>
           <div className="flex items-center gap-2">
             <button
@@ -81,11 +92,11 @@ export function ReportView({ report, isExpert, loading, loadingStep }: ReportVie
               className="flex items-center gap-1 text-[11px] text-surface-400 hover:text-surface-200 cursor-pointer"
             >
               <Copy size={12} />
-              {copied ? 'Copied!' : 'Copy'}
+              {copied ? t('copied') : t('copy')}
             </button>
             <button className="flex items-center gap-1 text-[11px] text-surface-400 hover:text-surface-200 cursor-pointer">
               <Share2 size={12} />
-              Share
+              {t('share')}
             </button>
           </div>
         </div>
@@ -101,7 +112,7 @@ export function ReportView({ report, isExpert, loading, loadingStep }: ReportVie
       <div className="grid grid-cols-2 gap-4">
         {/* Pie chart */}
         <div className="bg-surface-800/30 border border-surface-700/50 rounded-xl p-4">
-          <h4 className="text-xs font-semibold text-surface-300 mb-3">Sector Allocation</h4>
+          <h4 className="text-xs font-semibold text-surface-300 mb-3">{t('sectorAllocation')}</h4>
           <div className="h-48">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -126,7 +137,7 @@ export function ReportView({ report, isExpert, loading, loadingStep }: ReportVie
                     fontSize: '12px',
                     color: '#e2e8f0',
                   }}
-                  formatter={(value) => [`${value}%`, 'Allocation']}
+                  formatter={(value) => [`${value}%`, t('allocation')]}
                 />
               </PieChart>
             </ResponsiveContainer>
@@ -143,7 +154,7 @@ export function ReportView({ report, isExpert, loading, loadingStep }: ReportVie
 
         {/* Health score + radar */}
         <div className="bg-surface-800/30 border border-surface-700/50 rounded-xl p-4">
-          <h4 className="text-xs font-semibold text-surface-300 mb-3">Risk Profile</h4>
+          <h4 className="text-xs font-semibold text-surface-300 mb-3">{t('riskProfile')}</h4>
           <div className="flex items-center gap-4 mb-2">
             <div className="relative w-20 h-20">
               <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
@@ -167,10 +178,8 @@ export function ReportView({ report, isExpert, loading, loadingStep }: ReportVie
               </div>
             </div>
             <div>
-              <p className="text-xs text-surface-400">Health Score</p>
-              <p className={`text-sm font-semibold ${scoreColor}`}>
-                {report.healthScore >= 80 ? 'Strong' : report.healthScore >= 60 ? 'Moderate' : 'Needs Work'}
-              </p>
+              <p className="text-xs text-surface-400">{t('healthScore')}</p>
+              <p className={`text-sm font-semibold ${scoreColor}`}>{scoreLabel}</p>
             </div>
           </div>
           <div className="h-36">
@@ -196,7 +205,7 @@ export function ReportView({ report, isExpert, loading, loadingStep }: ReportVie
       <div className="bg-surface-800/30 border border-surface-700/50 rounded-xl p-4">
         <h4 className="text-xs font-semibold text-surface-300 mb-3 flex items-center gap-2">
           <TrendingUp size={14} className="text-accent-400" />
-          Short-term Actions (1-3 Months)
+          {t('shortTermActions')}
         </h4>
         <div className="space-y-2">
           {report.shortTermActions.map((action, i) => (
@@ -233,7 +242,7 @@ export function ReportView({ report, isExpert, loading, loadingStep }: ReportVie
                         : 'bg-yellow-500/20 text-yellow-300'
                     }`}
                   >
-                    {action.action}
+                    {t(action.action)}
                   </span>
                 </div>
                 <p className="text-xs text-surface-400 mt-0.5 leading-relaxed">{action.detail}</p>
@@ -243,7 +252,7 @@ export function ReportView({ report, isExpert, loading, loadingStep }: ReportVie
         </div>
       </div>
 
-      {/* Long-term view (collapsible in quick mode) */}
+      {/* Long-term view */}
       <div className="bg-surface-800/30 border border-surface-700/50 rounded-xl overflow-hidden">
         <button
           onClick={() => setExpanded(!expanded)}
@@ -251,7 +260,7 @@ export function ReportView({ report, isExpert, loading, loadingStep }: ReportVie
         >
           <h4 className="text-xs font-semibold text-surface-300 flex items-center gap-2">
             <TrendingUp size={14} className="text-primary-400" />
-            Long-term Asset Allocation View (1-3 Years)
+            {t('longTermView')}
           </h4>
           {expanded ? <ChevronUp size={14} className="text-surface-500" /> : <ChevronDown size={14} className="text-surface-500" />}
         </button>
@@ -273,7 +282,7 @@ export function ReportView({ report, isExpert, loading, loadingStep }: ReportVie
       <div className="bg-red-500/5 border border-red-500/20 rounded-xl p-4">
         <h4 className="text-xs font-semibold text-red-300 mb-3 flex items-center gap-2">
           <AlertTriangle size={14} />
-          Risk Warnings
+          {t('riskWarnings')}
         </h4>
         <ul className="space-y-2">
           {report.riskWarnings.map((warning, i) => (
@@ -288,19 +297,9 @@ export function ReportView({ report, isExpert, loading, loadingStep }: ReportVie
   );
 }
 
-function Sparkle({ className }: { className?: string }) {
+function SparkleIcon({ className }: { className?: string }) {
   return (
-    <svg
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
       <path d="M12 3l1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3z" />
     </svg>
   );

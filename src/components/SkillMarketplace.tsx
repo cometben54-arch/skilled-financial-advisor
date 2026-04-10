@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Search, SlidersHorizontal, Plus, X, TrendingUp, Clock, Heart } from 'lucide-react';
+import { Search, SlidersHorizontal, Plus, X, TrendingUp } from 'lucide-react';
 import type { Skill, SortMode } from '../types';
 import { SkillCard } from './SkillCard';
+import { useI18n } from '../i18n';
 
 interface SkillMarketplaceProps {
   skills: Skill[];
@@ -18,6 +19,7 @@ export function SkillMarketplace({
   onLikeSkill,
   onUploadSkill,
 }: SkillMarketplaceProps) {
+  const { t } = useI18n();
   const [search, setSearch] = useState('');
   const [sortMode, setSortMode] = useState<SortMode>('popular');
   const [filterTag, setFilterTag] = useState<string | null>(null);
@@ -27,17 +29,20 @@ export function SkillMarketplace({
 
   const filteredSkills = skills
     .filter((s) => {
+      const name = s.nameKey ? t(s.nameKey) : s.name;
+      const desc = s.descriptionKey ? t(s.descriptionKey) : s.description;
+      const q = search.toLowerCase();
       const matchesSearch =
-        s.name.toLowerCase().includes(search.toLowerCase()) ||
-        s.description.toLowerCase().includes(search.toLowerCase()) ||
-        s.tags.some((t) => t.toLowerCase().includes(search.toLowerCase()));
+        name.toLowerCase().includes(q) ||
+        desc.toLowerCase().includes(q) ||
+        s.tags.some((tag) => tag.toLowerCase().includes(q));
       const matchesTag = !filterTag || s.tags.includes(filterTag);
       return matchesSearch && matchesTag;
     })
     .sort((a, b) => {
       if (sortMode === 'popular') return b.uses + b.likes - (a.uses + a.likes);
       if (sortMode === 'most-liked') return b.likes - a.likes;
-      return 0; // newest — keep original order
+      return 0;
     });
 
   return (
@@ -46,10 +51,10 @@ export function SkillMarketplace({
       <div className="p-4 border-b border-surface-800">
         <h2 className="text-sm font-bold text-surface-100 flex items-center gap-2">
           <TrendingUp size={16} className="text-primary-400" />
-          Skill Marketplace
+          {t('skillMarketplace')}
         </h2>
         <p className="text-[11px] text-surface-500 mt-0.5">
-          Select an investment master's mindset
+          {t('skillMarketplaceDesc')}
         </p>
       </div>
 
@@ -59,7 +64,7 @@ export function SkillMarketplace({
           <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-surface-500" />
           <input
             type="text"
-            placeholder="Search skills..."
+            placeholder={t('searchSkills')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full pl-8 pr-3 py-2 text-xs bg-surface-800 border border-surface-700 rounded-lg text-surface-200 placeholder-surface-500 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500/30"
@@ -76,7 +81,7 @@ export function SkillMarketplace({
                 : 'bg-surface-800 text-surface-400 border border-surface-700 hover:border-surface-600'
             }`}
           >
-            All
+            {t('all')}
           </button>
           {allTags.map((tag) => (
             <button
@@ -97,10 +102,10 @@ export function SkillMarketplace({
         <div className="flex items-center gap-1">
           <SlidersHorizontal size={11} className="text-surface-500" />
           {[
-            { key: 'popular' as const, label: 'Popular', icon: TrendingUp },
-            { key: 'newest' as const, label: 'Latest', icon: Clock },
-            { key: 'most-liked' as const, label: 'Top Liked', icon: Heart },
-          ].map(({ key, label }) => (
+            { key: 'popular' as const, labelKey: 'popular' },
+            { key: 'newest' as const, labelKey: 'latest' },
+            { key: 'most-liked' as const, labelKey: 'topLiked' },
+          ].map(({ key, labelKey }) => (
             <button
               key={key}
               onClick={() => setSortMode(key)}
@@ -110,7 +115,7 @@ export function SkillMarketplace({
                   : 'text-surface-500 hover:text-surface-300'
               }`}
             >
-              {label}
+              {t(labelKey)}
             </button>
           ))}
         </div>
@@ -129,7 +134,7 @@ export function SkillMarketplace({
         ))}
         {filteredSkills.length === 0 && (
           <div className="text-center py-8 text-surface-500 text-xs">
-            No skills found matching your search.
+            {t('noSkillsFound')}
           </div>
         )}
       </div>
@@ -141,7 +146,7 @@ export function SkillMarketplace({
           className="w-full flex items-center justify-center gap-2 py-2.5 px-4 text-xs font-medium rounded-lg bg-primary-600 hover:bg-primary-500 text-white transition-colors cursor-pointer"
         >
           <Plus size={14} />
-          Upload New Skill
+          {t('uploadNewSkill')}
         </button>
       </div>
 
@@ -166,12 +171,13 @@ function UploadModal({
   onClose: () => void;
   onSubmit: (data: Omit<Skill, 'id' | 'likes' | 'uses' | 'liked' | 'isSystem' | 'creator'>) => void;
 }) {
+  const { t } = useI18n();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [promptTemplate, setPromptTemplate] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
-  const [isPublic, setIsPublic] = useState(true);
+  const [, setIsPublic] = useState(true);
 
   const handleAddTag = () => {
     if (tagInput.trim() && !tags.includes(tagInput.trim())) {
@@ -184,7 +190,7 @@ function UploadModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <div className="bg-surface-900 border border-surface-700 rounded-2xl w-full max-w-lg mx-4 max-h-[85vh] overflow-y-auto">
         <div className="flex items-center justify-between p-4 border-b border-surface-800">
-          <h3 className="text-sm font-bold text-surface-100">Upload New Skill</h3>
+          <h3 className="text-sm font-bold text-surface-100">{t('uploadSkillTitle')}</h3>
           <button onClick={onClose} className="text-surface-500 hover:text-surface-300 cursor-pointer">
             <X size={18} />
           </button>
@@ -192,22 +198,22 @@ function UploadModal({
 
         <div className="p-4 space-y-4">
           <div>
-            <label className="block text-xs font-medium text-surface-300 mb-1">Skill Name</label>
+            <label className="block text-xs font-medium text-surface-300 mb-1">{t('skillName')}</label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Momentum Trader"
+              placeholder={t('skillNamePlaceholder')}
               className="w-full px-3 py-2 text-sm bg-surface-800 border border-surface-700 rounded-lg text-surface-200 placeholder-surface-500 focus:outline-none focus:border-primary-500"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-surface-300 mb-1">Description</label>
+            <label className="block text-xs font-medium text-surface-300 mb-1">{t('description')}</label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="A short description of the investment philosophy..."
+              placeholder={t('descriptionPlaceholder')}
               rows={2}
               className="w-full px-3 py-2 text-sm bg-surface-800 border border-surface-700 rounded-lg text-surface-200 placeholder-surface-500 focus:outline-none focus:border-primary-500 resize-none"
             />
@@ -215,36 +221,36 @@ function UploadModal({
 
           <div>
             <label className="block text-xs font-medium text-surface-300 mb-1">
-              Prompt Template
+              {t('promptTemplate')}
               <span className="text-surface-500 font-normal ml-1">
-                (use {"{{portfolio_context}}"} as placeholder)
+                {t('promptTemplateHint')}
               </span>
             </label>
             <textarea
               value={promptTemplate}
               onChange={(e) => setPromptTemplate(e.target.value)}
-              placeholder={`You are an investment advisor with a specific philosophy...\n\nAnalyze: {{portfolio_context}}`}
+              placeholder={t('promptTemplatePlaceholder')}
               rows={6}
               className="w-full px-3 py-2 text-sm bg-surface-800 border border-surface-700 rounded-lg text-surface-200 placeholder-surface-500 focus:outline-none focus:border-primary-500 resize-none font-mono text-xs"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-surface-300 mb-1">Tags</label>
+            <label className="block text-xs font-medium text-surface-300 mb-1">{t('tags')}</label>
             <div className="flex gap-2">
               <input
                 type="text"
                 value={tagInput}
                 onChange={(e) => setTagInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddTag())}
-                placeholder="Add a tag..."
+                placeholder={t('addTagPlaceholder')}
                 className="flex-1 px-3 py-2 text-sm bg-surface-800 border border-surface-700 rounded-lg text-surface-200 placeholder-surface-500 focus:outline-none focus:border-primary-500"
               />
               <button
                 onClick={handleAddTag}
                 className="px-3 py-2 text-xs bg-surface-700 rounded-lg text-surface-300 hover:bg-surface-600 cursor-pointer"
               >
-                Add
+                {t('addTag')}
               </button>
             </div>
             {tags.length > 0 && (
@@ -256,7 +262,7 @@ function UploadModal({
                   >
                     {tag}
                     <button
-                      onClick={() => setTags(tags.filter((t) => t !== tag))}
+                      onClick={() => setTags(tags.filter((tt) => tt !== tag))}
                       className="hover:text-white cursor-pointer"
                     >
                       <X size={10} />
@@ -270,11 +276,11 @@ function UploadModal({
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
-              checked={isPublic}
+              defaultChecked
               onChange={(e) => setIsPublic(e.target.checked)}
               className="w-4 h-4 rounded border-surface-600 bg-surface-800 text-primary-500 focus:ring-primary-500/30"
             />
-            <span className="text-xs text-surface-300">Make this skill public</span>
+            <span className="text-xs text-surface-300">{t('makePublic')}</span>
           </label>
         </div>
 
@@ -283,7 +289,7 @@ function UploadModal({
             onClick={onClose}
             className="flex-1 py-2.5 text-xs font-medium rounded-lg bg-surface-800 text-surface-300 hover:bg-surface-700 cursor-pointer"
           >
-            Cancel
+            {t('cancel')}
           </button>
           <button
             onClick={() => {
@@ -300,7 +306,7 @@ function UploadModal({
             disabled={!name || !promptTemplate}
             className="flex-1 py-2.5 text-xs font-medium rounded-lg bg-primary-600 text-white hover:bg-primary-500 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
           >
-            Upload Skill
+            {t('uploadSkill')}
           </button>
         </div>
       </div>

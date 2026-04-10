@@ -4,6 +4,7 @@ import {
   CheckCircle2, XCircle, Loader2, Settings,
 } from 'lucide-react';
 import type { AIConfig as AIConfigType } from '../types';
+import { useI18n } from '../i18n';
 
 interface AIConfigProps {
   config: AIConfigType;
@@ -19,6 +20,7 @@ const DEFAULT_MODELS = [
 ];
 
 export function AIConfigPanel({ config, onChange }: AIConfigProps) {
+  const { t } = useI18n();
   const [showCustom, setShowCustom] = useState(config.useCustom);
   const [connectionStatus, setConnectionStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
 
@@ -42,17 +44,17 @@ export function AIConfigPanel({ config, onChange }: AIConfigProps) {
       <div className="p-4 border-b border-surface-800">
         <h2 className="text-sm font-bold text-surface-100 flex items-center gap-2">
           <Settings size={16} className="text-primary-400" />
-          AI Engine
+          {t('aiEngine')}
         </h2>
         <p className="text-[11px] text-surface-500 mt-0.5">
-          Configure model and analysis mode
+          {t('aiEngineDesc')}
         </p>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-5">
         {/* Model selection */}
         <div>
-          <label className="block text-xs font-medium text-surface-300 mb-2">Default Model</label>
+          <label className="block text-xs font-medium text-surface-300 mb-2">{t('defaultModel')}</label>
           <div className="space-y-1.5">
             {DEFAULT_MODELS.map((model) => (
               <button
@@ -94,7 +96,7 @@ export function AIConfigPanel({ config, onChange }: AIConfigProps) {
           {/* Credits */}
           <div className="mt-3 p-2.5 bg-surface-800/50 rounded-lg border border-surface-700/30">
             <div className="flex items-center justify-between text-xs">
-              <span className="text-surface-400">Free Credits</span>
+              <span className="text-surface-400">{t('freeCredits')}</span>
               <span className="text-surface-200 font-medium">
                 {freeCredits - usedCredits}/{freeCredits}
               </span>
@@ -120,7 +122,7 @@ export function AIConfigPanel({ config, onChange }: AIConfigProps) {
           >
             <span className="flex items-center gap-1.5">
               <Key size={12} className="text-surface-400" />
-              Use your own key
+              {t('useYourOwnKey')}
             </span>
             {showCustom ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
           </button>
@@ -128,7 +130,7 @@ export function AIConfigPanel({ config, onChange }: AIConfigProps) {
           {showCustom && (
             <div className="mt-3 space-y-3 p-3 bg-surface-800/30 border border-surface-700/50 rounded-lg">
               <div>
-                <label className="block text-[11px] text-surface-400 mb-1">API Endpoint URL</label>
+                <label className="block text-[11px] text-surface-400 mb-1">{t('apiEndpoint')}</label>
                 <input
                   type="url"
                   value={config.customEndpoint || ''}
@@ -140,7 +142,7 @@ export function AIConfigPanel({ config, onChange }: AIConfigProps) {
                 />
               </div>
               <div>
-                <label className="block text-[11px] text-surface-400 mb-1">API Key</label>
+                <label className="block text-[11px] text-surface-400 mb-1">{t('apiKey')}</label>
                 <input
                   type="password"
                   value={config.customApiKey || ''}
@@ -152,7 +154,7 @@ export function AIConfigPanel({ config, onChange }: AIConfigProps) {
                 />
               </div>
               <div>
-                <label className="block text-[11px] text-surface-400 mb-1">Model Name</label>
+                <label className="block text-[11px] text-surface-400 mb-1">{t('modelName')}</label>
                 <input
                   type="text"
                   value={config.customModelName || ''}
@@ -172,26 +174,26 @@ export function AIConfigPanel({ config, onChange }: AIConfigProps) {
                 {connectionStatus === 'testing' ? (
                   <>
                     <Loader2 size={12} className="animate-spin" />
-                    Testing...
+                    {t('testing')}
                   </>
                 ) : connectionStatus === 'success' ? (
                   <>
                     <CheckCircle2 size={12} className="text-accent-400" />
-                    Connected!
+                    {t('connected')}
                   </>
                 ) : connectionStatus === 'error' ? (
                   <>
                     <XCircle size={12} className="text-red-400" />
-                    Failed — check credentials
+                    {t('connectionFailed')}
                   </>
                 ) : (
-                  'Test Connection'
+                  t('testConnection')
                 )}
               </button>
 
               <p className="text-[10px] text-surface-500 flex items-center gap-1">
                 <Key size={10} />
-                Key stored in browser localStorage only (encrypted)
+                {t('keyStorageHint')}
               </p>
             </div>
           )}
@@ -199,7 +201,7 @@ export function AIConfigPanel({ config, onChange }: AIConfigProps) {
 
         {/* Mode switch */}
         <div>
-          <label className="block text-xs font-medium text-surface-300 mb-2">Analysis Mode</label>
+          <label className="block text-xs font-medium text-surface-300 mb-2">{t('analysisMode')}</label>
           <div className="grid grid-cols-2 gap-2">
             <button
               onClick={() => onChange({ ...config, mode: 'quick' })}
@@ -215,9 +217,9 @@ export function AIConfigPanel({ config, onChange }: AIConfigProps) {
                   config.mode === 'quick' ? 'text-accent-400' : 'text-surface-500'
                 }`}
               />
-              <span className="text-xs font-semibold text-surface-200 block">Quick</span>
+              <span className="text-xs font-semibold text-surface-200 block">{t('quickMode')}</span>
               <span className="text-[10px] text-surface-500 block mt-0.5">
-                Structured JSON, single call
+                {t('quickModeDesc')}
               </span>
             </button>
             <button
@@ -234,23 +236,15 @@ export function AIConfigPanel({ config, onChange }: AIConfigProps) {
                   config.mode === 'expert' ? 'text-primary-400' : 'text-surface-500'
                 }`}
               />
-              <span className="text-xs font-semibold text-surface-200 block">Expert</span>
+              <span className="text-xs font-semibold text-surface-200 block">{t('expertMode')}</span>
               <span className="text-[10px] text-surface-500 block mt-0.5">
-                Chain of thought, multi-step
+                {t('expertModeDesc')}
               </span>
             </button>
           </div>
           <div className="mt-3 p-2.5 bg-surface-800/50 rounded-lg border border-surface-700/30">
             <p className="text-[11px] text-surface-400 leading-relaxed">
-              {config.mode === 'quick' ? (
-                <>
-                  <strong className="text-surface-300">Quick mode:</strong> Limits token output, returns structured recommendations in a single LLM call. Best for fast portfolio scans.
-                </>
-              ) : (
-                <>
-                  <strong className="text-surface-300">Expert mode:</strong> Enables chain-of-thought reasoning with multi-step analysis. May trigger additional API calls for news search and metric calculation. Outputs detailed research-style reports.
-                </>
-              )}
+              {config.mode === 'quick' ? t('quickModeDetail') : t('expertModeDetail')}
             </p>
           </div>
         </div>

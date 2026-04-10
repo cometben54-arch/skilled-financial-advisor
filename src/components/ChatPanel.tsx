@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Send, Bot, User, MessageSquare } from 'lucide-react';
 import type { ChatMessage } from '../types';
+import { useI18n } from '../i18n';
 
 interface ChatPanelProps {
   messages: ChatMessage[];
@@ -10,6 +11,7 @@ interface ChatPanelProps {
 }
 
 export function ChatPanel({ messages, onSend, isResponding, hasReport }: ChatPanelProps) {
+  const { t } = useI18n();
   const [input, setInput] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -31,9 +33,9 @@ export function ChatPanel({ messages, onSend, isResponding, hasReport }: ChatPan
     <div className="bg-surface-800/30 border border-surface-700/50 rounded-xl overflow-hidden">
       <div className="px-4 py-3 border-b border-surface-700/50 flex items-center gap-2">
         <MessageSquare size={14} className="text-primary-400" />
-        <h3 className="text-xs font-semibold text-surface-200">Follow-up Discussion</h3>
+        <h3 className="text-xs font-semibold text-surface-200">{t('followUpDiscussion')}</h3>
         <span className="text-[10px] text-surface-500 ml-auto">
-          Context: current analysis session
+          {t('contextLabel')}
         </span>
       </div>
 
@@ -43,14 +45,10 @@ export function ChatPanel({ messages, onSend, isResponding, hasReport }: ChatPan
           <div className="text-center py-6">
             <MessageSquare size={24} className="mx-auto text-surface-600 mb-2" />
             <p className="text-xs text-surface-500">
-              Ask follow-up questions about the analysis above
+              {t('askFollowUp')}
             </p>
             <div className="flex flex-wrap justify-center gap-2 mt-3">
-              {[
-                'What if I want to be more conservative?',
-                'How would this change with a 5-year horizon?',
-                'What about adding crypto exposure?',
-              ].map((q) => (
+              {[t('suggestedQ1'), t('suggestedQ2'), t('suggestedQ3')].map((q) => (
                 <button
                   key={q}
                   onClick={() => onSend(q)}
@@ -117,7 +115,7 @@ export function ChatPanel({ messages, onSend, isResponding, hasReport }: ChatPan
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask a follow-up question..."
+            placeholder={t('askPlaceholder')}
             disabled={isResponding}
             className="flex-1 px-3.5 py-2.5 text-xs bg-surface-800 border border-surface-700 rounded-lg text-surface-200 placeholder-surface-500 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500/30 disabled:opacity-50"
           />
