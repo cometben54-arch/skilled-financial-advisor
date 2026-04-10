@@ -9,38 +9,35 @@ import { AIConfigPanel } from './components/AIConfig';
 import { ChatPanel } from './components/ChatPanel';
 import { AdminPanel, useAdminModels, useAdminSkills } from './components/AdminPanel';
 import { useI18n } from './i18n';
-import { generateAnalysis, sendFollowUp } from './services/ai';
+import { generateAnalysisPhased, sendFollowUp, getCredits, deductCredits, hasEnoughCredits } from './services/ai';
 
 function App() {
   const { locale, setLocale, t } = useI18n();
   const { models: adminModels } = useAdminModels();
   const { skills: adminSkills } = useAdminSkills();
 
-  // Skills state — initialized from admin-managed skills
   const [skills, setSkills] = useState<Skill[]>(adminSkills);
   const [activeSkill, setActiveSkill] = useState<Skill | null>(null);
-
-  // Portfolio state
   const [portfolio, setPortfolio] = useState<PortfolioItem[]>(demoPortfolio);
-
-  // AI config state
   const [aiConfig, setAIConfig] = useState<AIConfig>({
     model: 'claude-sonnet-4-6',
     mode: 'expert',
     useCustom: false,
   });
 
-  // Report state
-  const [report, setReport] = useState<AnalysisReport | null>(null);
+  // Report state — partial for progressive rendering
+  const [report, setReport] = useState<Partial<AnalysisReport> | null>(null);
+  const [phase, setPhase] = useState(0); // 0=loading, 1=summary, 2=actions, 3=done
   const [isGenerating, setIsGenerating] = useState(false);
   const [loadingStep, setLoadingStep] = useState('');
   const [generateError, setGenerateError] = useState<string | null>(null);
 
+  // Credits
+  const [credits, setCreditsState] = useState(getCredits);
+
   // Chat state
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isChatResponding, setIsChatResponding] = useState(false);
-
-  // Keep a ref to the current conversation for follow-ups
   const chatHistoryRef = useRef<{ role: 'user' | 'assistant'; content: string }[]>([]);
 
   const handleSelectSkill = useCallback((skill: Skill) => {
@@ -62,11 +59,7 @@ function App() {
       const newSkill: Skill = {
         ...data,
         id: `custom-${Date.now()}`,
-        likes: 0,
-        uses: 0,
-        liked: false,
-        isSystem: false,
-        creator: 'You',
+        likes: 0, uses: 0, liked: false, isSystem: false, creator: 'You',
       };
       setSkills((prev) => [newSkill, ...prev]);
       setActiveSkill(newSkill);
@@ -77,18 +70,23 @@ function App() {
   const handleGenerate = useCallback(async () => {
     if (!activeSkill) return;
 
+    // Credits check (skip if user is using their own key)
+    if (!aiConfig.useCustom && !hasEnoughCredits(aiConfig.mode)) {
+      setGenerateError(t('creditsExhausted'));
+      return;
+    }
+
     setIsGenerating(true);
     setReport(null);
+    setPhase(0);
     setChatMessages([]);
     chatHistoryRef.current = [];
     setGenerateError(null);
 
-    // Animate loading steps
     const steps = [
       t('parsingHoldings'),
       `${t('activeSkillLabel')}${activeSkill.nameKey ? t(activeSkill.nameKey) : activeSkill.name}...`,
       t('evaluatingRisk'),
-      t('generatingRecs'),
     ];
     let stepIdx = 0;
     const stepInterval = setInterval(() => {
@@ -99,16 +97,31 @@ function App() {
     }, 2000);
 
     try {
-      const result = await generateAnalysis(activeSkill, portfolio, aiConfig, locale);
-      clearInterval(stepInterval);
-      setReport(result);
+      await generateAnalysisPhased(
+        activeSkill, portfolio, aiConfig, locale,
+        (phaseNum, partial) => {
+          setReport((prev) => ({ ...prev, ...partial }));
+          setPhase(phaseNum);
+          if (phaseNum === 1) {
+            clearInterval(stepInterval);
+            setLoadingStep('');
+          }
+        }
+      );
+
+      // Deduct credits on success (not when using own key)
+      if (!aiConfig.useCustom) {
+        const cost = aiConfig.mode === 'quick' ? 1 : 2;
+        const remaining = deductCredits(cost);
+        setCreditsState(remaining);
+      }
     } catch (err) {
       clearInterval(stepInterval);
       console.warn('AI API unavailable, falling back to demo:', err);
       setGenerateError(String(err instanceof Error ? err.message : err));
-      // Fallback to demo report — use active skill name so it doesn't always say "Buffett"
       const skillDisplayName = activeSkill.nameKey ? t(activeSkill.nameKey) : activeSkill.name;
       setReport(getDemoReport(locale, skillDisplayName));
+      setPhase(3);
     } finally {
       setIsGenerating(false);
       setLoadingStep('');
@@ -120,10 +133,7 @@ function App() {
       if (!activeSkill) return;
 
       const userMsg: ChatMessage = {
-        id: `msg-${Date.now()}`,
-        role: 'user',
-        content: message,
-        timestamp: new Date(),
+        id: `msg-${Date.now()}`, role: 'user', content: message, timestamp: new Date(),
       };
       setChatMessages((prev) => [...prev, userMsg]);
       chatHistoryRef.current.push({ role: 'user', content: message });
@@ -135,33 +145,19 @@ function App() {
           .join('\n');
 
         const response = await sendFollowUp(
-          chatHistoryRef.current,
-          activeSkill.promptTemplate,
-          portfolioContext,
-          aiConfig,
-          locale,
+          chatHistoryRef.current, activeSkill.promptTemplate, portfolioContext, aiConfig, locale,
         );
-
         chatHistoryRef.current.push({ role: 'assistant', content: response });
-        const aiMsg: ChatMessage = {
-          id: `msg-${Date.now()}-ai`,
-          role: 'assistant',
-          content: response,
-          timestamp: new Date(),
-        };
-        setChatMessages((prev) => [...prev, aiMsg]);
+        setChatMessages((prev) => [...prev, {
+          id: `msg-${Date.now()}-ai`, role: 'assistant', content: response, timestamp: new Date(),
+        }]);
       } catch {
-        // Fallback
         const fallback = t('demo_chatResponse') as string;
         const response = fallback.replace('{skill}', activeSkill.nameKey ? t(activeSkill.nameKey) : activeSkill.name);
         chatHistoryRef.current.push({ role: 'assistant', content: response });
-        const aiMsg: ChatMessage = {
-          id: `msg-${Date.now()}-ai`,
-          role: 'assistant',
-          content: response,
-          timestamp: new Date(),
-        };
-        setChatMessages((prev) => [...prev, aiMsg]);
+        setChatMessages((prev) => [...prev, {
+          id: `msg-${Date.now()}-ai`, role: 'assistant', content: response, timestamp: new Date(),
+        }]);
       } finally {
         setIsChatResponding(false);
       }
@@ -171,86 +167,59 @@ function App() {
 
   return (
     <div className="h-screen flex flex-col bg-surface-950">
-      {/* Top bar */}
       <header className="h-12 border-b border-surface-800 bg-surface-900/80 backdrop-blur-sm flex items-center justify-between px-4 shrink-0">
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center">
             <Compass size={16} className="text-white" />
           </div>
           <span className="text-sm font-bold text-surface-100">Portfolio Pilot</span>
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary-500/20 text-primary-300 font-medium">
-            {t('beta')}
-          </span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary-500/20 text-primary-300 font-medium">{t('beta')}</span>
         </div>
         <div className="flex items-center gap-3 text-xs text-surface-400">
-          <span>
-            {t('model')}: <strong className="text-surface-200">{aiConfig.useCustom ? (aiConfig.customModelName || 'Custom') : aiConfig.model}</strong>
-          </span>
+          <span>{t('model')}: <strong className="text-surface-200">{aiConfig.useCustom ? (aiConfig.customModelName || 'Custom') : aiConfig.model}</strong></span>
           <span className="w-px h-4 bg-surface-700" />
-          <span>
-            {t('mode')}: <strong className="text-surface-200">{aiConfig.mode === 'quick' ? t('quick') : t('expert')}</strong>
-          </span>
+          <span>{t('mode')}: <strong className="text-surface-200">{aiConfig.mode === 'quick' ? t('quick') : t('expert')}</strong></span>
           <span className="w-px h-4 bg-surface-700" />
-          <button
-            onClick={() => setLocale(locale === 'zh' ? 'en' : 'zh')}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-surface-700 hover:border-primary-500 hover:bg-primary-500/10 text-surface-300 hover:text-primary-300 transition-all cursor-pointer"
-          >
+          <button onClick={() => setLocale(locale === 'zh' ? 'en' : 'zh')} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-surface-700 hover:border-primary-500 hover:bg-primary-500/10 text-surface-300 hover:text-primary-300 transition-all cursor-pointer">
             <Globe size={13} />
             <span className="font-medium">{locale === 'zh' ? 'EN' : '中文'}</span>
           </button>
         </div>
       </header>
 
-      {/* Main layout */}
       <div className="flex-1 flex overflow-hidden">
         <aside className="w-72 shrink-0 overflow-hidden">
-          <SkillMarketplace
-            skills={skills}
-            activeSkill={activeSkill}
-            onSelectSkill={handleSelectSkill}
-            onLikeSkill={handleLikeSkill}
-            onUploadSkill={handleUploadSkill}
-          />
+          <SkillMarketplace skills={skills} activeSkill={activeSkill} onSelectSkill={handleSelectSkill} onLikeSkill={handleLikeSkill} onUploadSkill={handleUploadSkill} />
         </aside>
 
         <main className="flex-1 overflow-y-auto">
           <div className="max-w-3xl mx-auto p-6 space-y-4">
-            <PortfolioInput
-              activeSkill={activeSkill}
-              portfolio={portfolio}
-              onPortfolioChange={setPortfolio}
-              onGenerate={handleGenerate}
-              isGenerating={isGenerating}
-              hasReport={!!report}
-            />
+            <PortfolioInput activeSkill={activeSkill} portfolio={portfolio} onPortfolioChange={setPortfolio} onGenerate={handleGenerate} isGenerating={isGenerating} hasReport={!!report} />
 
-            {generateError && report && (
+            {/* Credits exhausted error */}
+            {generateError === t('creditsExhausted') && (
+              <div className="px-4 py-3 bg-red-500/10 border border-red-500/20 rounded-lg text-xs text-red-300">
+                {t('creditsExhausted')}
+              </div>
+            )}
+
+            {/* API error with fallback */}
+            {generateError && generateError !== t('creditsExhausted') && report && (
               <div className="px-4 py-2.5 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-xs text-yellow-300">
                 {t('aiFallbackNotice')}: {generateError}
               </div>
             )}
 
             {(isGenerating || report) && (
-              <ReportView
-                report={report!}
-                isExpert={aiConfig.mode === 'expert'}
-                loading={isGenerating}
-                loadingStep={loadingStep}
-                portfolio={portfolio}
-              />
+              <ReportView report={report} isExpert={aiConfig.mode === 'expert'} loading={isGenerating} loadingStep={loadingStep} portfolio={portfolio} phase={phase} />
             )}
 
-            <ChatPanel
-              messages={chatMessages}
-              onSend={handleChatSend}
-              isResponding={isChatResponding}
-              hasReport={!!report}
-            />
+            <ChatPanel messages={chatMessages} onSend={handleChatSend} isResponding={isChatResponding} hasReport={phase >= 3} />
           </div>
         </main>
 
         <aside className="w-80 shrink-0 overflow-hidden">
-          <AIConfigPanel config={aiConfig} onChange={setAIConfig} adminModels={adminModels} />
+          <AIConfigPanel config={aiConfig} onChange={setAIConfig} adminModels={adminModels} credits={credits} />
         </aside>
       </div>
 

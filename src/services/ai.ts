@@ -4,196 +4,190 @@ import type { Locale } from '../i18n';
 const CHAT_API = '/api/chat';
 
 function buildPortfolioContext(portfolio: PortfolioItem[]): string {
-  const lines = portfolio.map((p) => {
+  return portfolio.map((p) => {
     const parts = [`${p.ticker} (${p.name}) — ${p.weight}%`];
     if (p.costBasis) parts.push(`cost basis: $${p.costBasis}`);
     if (p.currentPrice) parts.push(`current price: $${p.currentPrice}`);
     if (p.sector) parts.push(`sector: ${p.sector}`);
     return parts.join(', ');
-  });
-  return lines.join('\n');
+  }).join('\n');
 }
 
-function buildUserMessage(portfolio: PortfolioItem[], locale: Locale, mode: 'quick' | 'expert'): string {
-  const ctx = buildPortfolioContext(portfolio);
-
-  const formatInstructions = mode === 'quick'
-    ? `Respond in JSON with this exact structure (no markdown fences around the JSON):
-{
-  "healthScore": <number 0-100>,
-  "summary": "<markdown string>",
-  "sectorAllocation": [{"name":"<sector>","value":<percent>,"color":"<hex>"}],
-  "riskMetrics": [{"label":"<metric>","value":<0-100>,"max":100}],
-  "shortTermActions": [{"action":"buy|sell|hold","ticker":"<TICKER>","detail":"<explanation>"}],
-  "longTermView": "<markdown string>",
-  "riskWarnings": ["<warning1>","<warning2>"]
-}`
-    : `Provide a comprehensive investment analysis report in **Markdown** format with the following sections:
-
-## Summary
-(2-3 paragraphs with specific price quotes and P/E ratios for key holdings)
-
-## Health Score
-(a single number 0-100, written as: HEALTH_SCORE: <number>)
-
-## Sector Allocation
-(list each sector with percentage, format: - <Sector>: <percent>%)
-
-## Risk Metrics
-(rate each on 0-100 scale: Concentration, Volatility, Diversification, Income Yield, Downside Protection)
-
-## Short-term Actions (1-3 Months)
-(for each: **[BUY/SELL/HOLD] TICKER** — detailed rationale with current price)
-
-## Long-term View (1-3 Years)
-(detailed analysis with target allocations and rebalancing path)
-
-## Risk Warnings
-(numbered list of specific, quantified risks)`;
-
-  const langNote = locale === 'zh'
+function langNote(locale: Locale) {
+  return locale === 'zh'
     ? '\n\nIMPORTANT: Respond entirely in Chinese (简体中文).'
     : '\n\nIMPORTANT: Respond entirely in English.';
-
-  return `Here is my current portfolio:\n\n${ctx}\n\nPlease analyze this portfolio and provide advice.\n\n${formatInstructions}${langNote}`;
 }
 
-function parseQuickResponse(raw: string): AnalysisReport | null {
+function customKeyPayload(aiConfig: AIConfig) {
+  return aiConfig.useCustom ? {
+    customEndpoint: aiConfig.customEndpoint,
+    customApiKey: aiConfig.customApiKey,
+    customModel: aiConfig.customModelName,
+  } : {};
+}
+
+async function callChat(payload: Record<string, unknown>): Promise<string> {
+  const res = await fetch(CHAT_API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Unknown error' }));
+    throw new Error((err as { error?: string }).error || `API error ${res.status}`);
+  }
+  const data = await res.json() as { content: string };
+  return data.content;
+}
+
+// ── Credits ──
+
+const CREDITS_KEY = 'pp-credits';
+const DEFAULT_CREDITS = 50;
+
+export function getCredits(): number {
   try {
-    // Try to extract JSON from the response
-    let jsonStr = raw;
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (jsonMatch) jsonStr = jsonMatch[0];
-    const parsed = JSON.parse(jsonStr);
-    return {
-      healthScore: parsed.healthScore ?? 50,
-      summary: parsed.summary ?? '',
-      sectorAllocation: parsed.sectorAllocation ?? [],
-      riskMetrics: parsed.riskMetrics ?? [],
-      shortTermActions: parsed.shortTermActions ?? [],
-      longTermView: parsed.longTermView ?? '',
-      riskWarnings: parsed.riskWarnings ?? [],
-    };
+    const raw = localStorage.getItem(CREDITS_KEY);
+    if (raw === null) return DEFAULT_CREDITS;
+    return parseInt(raw, 10);
+  } catch {
+    return DEFAULT_CREDITS;
+  }
+}
+
+export function deductCredits(amount: number): number {
+  const current = getCredits();
+  const next = Math.max(0, current - amount);
+  localStorage.setItem(CREDITS_KEY, String(next));
+  return next;
+}
+
+export function hasEnoughCredits(mode: 'quick' | 'expert'): boolean {
+  const cost = mode === 'quick' ? 1 : 2;
+  return getCredits() >= cost;
+}
+
+// ── Phase 1: Summary + Sector Allocation + Risk Metrics + Health Score ──
+
+const PHASE1_PROMPT = `Respond ONLY in valid JSON (no markdown fences). Analyze the portfolio and provide:
+{
+  "healthScore": <number 0-100>,
+  "summary": "<2-3 paragraph markdown analysis with specific prices and P/E ratios>",
+  "sectorAllocation": [{"name":"<sector>","value":<percent integer>,"color":"<hex color>"}],
+  "riskMetrics": [{"label":"<metric name>","value":<0-100>,"max":100}]
+}
+Include exactly 5 risk metrics: Concentration, Volatility, Diversification, Income Yield, Downside Protection.
+Include all sectors present in the portfolio with their percentage weights.`;
+
+// ── Phase 2: Short-term Actions ──
+
+const PHASE2_PROMPT = `Based on the portfolio below and this prior analysis summary:
+{priorSummary}
+
+Respond ONLY in valid JSON (no markdown fences). Provide short-term trading actions (1-3 months):
+{
+  "shortTermActions": [{"action":"buy|sell|hold","ticker":"<TICKER>","detail":"<detailed rationale with current price, P/E, and specific % adjustment>"}]
+}
+Provide 5-7 actions. Each detail should be 1-2 sentences with specific price targets.`;
+
+// ── Phase 3: Long-term View + Risk Warnings ──
+
+const PHASE3_PROMPT = `Based on the portfolio below and this prior analysis summary:
+{priorSummary}
+
+Respond ONLY in valid JSON (no markdown fences). Provide long-term analysis:
+{
+  "longTermView": "<detailed markdown analysis (3-5 paragraphs) with target allocations, rebalancing path, valuation diagnosis per holding, and timeline>",
+  "riskWarnings": ["<specific quantified risk 1>","<specific quantified risk 2>",...]
+}
+Provide 5-7 risk warnings. The long-term view should include per-stock valuation analysis.`;
+
+function tryParseJson(raw: string): Record<string, unknown> | null {
+  try {
+    let str = raw;
+    const m = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (m) str = m[1];
+    else {
+      const jm = raw.match(/\{[\s\S]*\}/);
+      if (jm) str = jm[0];
+    }
+    return JSON.parse(str);
   } catch {
     return null;
   }
 }
 
-function parseExpertResponse(raw: string): AnalysisReport {
-  // Extract health score
-  const scoreMatch = raw.match(/HEALTH_SCORE:\s*(\d+)/i);
-  const healthScore = scoreMatch ? parseInt(scoreMatch[1], 10) : 65;
+export type PhaseCallback = (phase: number, partial: Partial<AnalysisReport>) => void;
 
-  // Extract sector allocation
-  const sectorColors = ['#6366f1', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#ec4899'];
-  const sectorAllocation: AnalysisReport['sectorAllocation'] = [];
-  const sectorRegex = /[-*]\s*(.+?):\s*(\d+)%/g;
-  const sectorSection = raw.match(/## Sector Allocation[\s\S]*?(?=##|$)/i)?.[0] || raw;
-  let sectorMatch;
-  while ((sectorMatch = sectorRegex.exec(sectorSection)) !== null) {
-    sectorAllocation.push({
-      name: sectorMatch[1].trim(),
-      value: parseInt(sectorMatch[2], 10),
-      color: sectorColors[sectorAllocation.length % sectorColors.length],
-    });
-  }
-
-  // Extract risk metrics
-  const riskMetrics: AnalysisReport['riskMetrics'] = [];
-  const riskSection = raw.match(/## Risk Metrics[\s\S]*?(?=##|$)/i)?.[0] || '';
-  const riskRegex = /[-*]\s*(.+?):\s*(\d+)/g;
-  let riskMatch;
-  while ((riskMatch = riskRegex.exec(riskSection)) !== null) {
-    riskMetrics.push({ label: riskMatch[1].trim(), value: parseInt(riskMatch[2], 10), max: 100 });
-  }
-  if (riskMetrics.length === 0) {
-    riskMetrics.push(
-      { label: 'Concentration', value: 70, max: 100 },
-      { label: 'Volatility', value: 60, max: 100 },
-      { label: 'Diversification', value: 40, max: 100 },
-      { label: 'Income Yield', value: 25, max: 100 },
-      { label: 'Downside Protection', value: 35, max: 100 },
-    );
-  }
-
-  // Extract short-term actions
-  const shortTermActions: AnalysisReport['shortTermActions'] = [];
-  const actionsSection = raw.match(/## Short-term Actions[\s\S]*?(?=##|$)/i)?.[0] || '';
-  const actionRegex = /\*\*\[?(BUY|SELL|HOLD)\]?\s*([A-Z]{1,5})\*\*\s*[—-]\s*([\s\S]*?)(?=\*\*\[?(?:BUY|SELL|HOLD)|$)/gi;
-  let actionMatch;
-  while ((actionMatch = actionRegex.exec(actionsSection)) !== null) {
-    shortTermActions.push({
-      action: actionMatch[1].toLowerCase() as 'buy' | 'sell' | 'hold',
-      ticker: actionMatch[2],
-      detail: actionMatch[3].trim().replace(/\n/g, ' '),
-    });
-  }
-
-  // Extract sections
-  const summarySection = raw.match(/## Summary[\s\S]*?(?=##)/i)?.[0]?.replace(/## Summary\s*/i, '').trim() || raw.slice(0, 500);
-  const longTermSection = raw.match(/## Long-term View[\s\S]*?(?=##|$)/i)?.[0]?.replace(/## Long-term View.*?\n/i, '').trim() || '';
-  const warningsSection = raw.match(/## Risk Warnings[\s\S]*?(?=##|$)/i)?.[0] || '';
-  const riskWarnings: string[] = [];
-  const warnRegex = /\d+\.\s*([\s\S]*?)(?=\d+\.|$)/g;
-  let warnMatch;
-  while ((warnMatch = warnRegex.exec(warningsSection)) !== null) {
-    const w = warnMatch[1].trim();
-    if (w) riskWarnings.push(w);
-  }
-
-  return {
-    healthScore,
-    summary: summarySection,
-    sectorAllocation: sectorAllocation.length > 0 ? sectorAllocation : [
-      { name: 'Technology', value: 60, color: '#6366f1' },
-      { name: 'Other', value: 40, color: '#94a3b8' },
-    ],
-    riskMetrics,
-    shortTermActions,
-    longTermView: longTermSection,
-    riskWarnings,
-  };
-}
-
-export async function generateAnalysis(
+export async function generateAnalysisPhased(
   skill: Skill,
   portfolio: PortfolioItem[],
   aiConfig: AIConfig,
   locale: Locale,
+  onPhase: PhaseCallback,
 ): Promise<AnalysisReport> {
-  const portfolioContext = buildPortfolioContext(portfolio);
-  const systemPrompt = skill.promptTemplate.replace('{{portfolio_context}}', portfolioContext);
-  const userMessage = buildUserMessage(portfolio, locale, aiConfig.mode);
+  const ctx = buildPortfolioContext(portfolio);
+  const systemPrompt = skill.promptTemplate.replace('{{portfolio_context}}', ctx);
+  const lang = langNote(locale);
+  const custom = customKeyPayload(aiConfig);
 
-  const res = await fetch(CHAT_API, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      systemPrompt,
-      userMessage,
-      mode: aiConfig.mode,
-      ...(aiConfig.useCustom ? {
-        customEndpoint: aiConfig.customEndpoint,
-        customApiKey: aiConfig.customApiKey,
-        customModel: aiConfig.customModelName,
-      } : {}),
-    }),
+  // ── Phase 1 ──
+  const p1Raw = await callChat({
+    systemPrompt,
+    userMessage: `Portfolio:\n${ctx}\n\n${PHASE1_PROMPT}${lang}`,
+    mode: aiConfig.mode,
+    ...custom,
   });
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: 'Unknown error' }));
-    throw new Error((err as { error?: string }).error || `API error ${res.status}`);
-  }
+  const p1 = tryParseJson(p1Raw);
+  const phase1: Partial<AnalysisReport> = {
+    healthScore: (p1?.healthScore as number) ?? 65,
+    summary: (p1?.summary as string) ?? p1Raw.slice(0, 800),
+    sectorAllocation: (p1?.sectorAllocation as AnalysisReport['sectorAllocation']) ?? [],
+    riskMetrics: (p1?.riskMetrics as AnalysisReport['riskMetrics']) ?? [],
+  };
+  onPhase(1, phase1);
 
-  const data = await res.json() as { content: string };
-  const raw = data.content;
+  // ── Phase 2 ──
+  const summaryBrief = (phase1.summary ?? '').slice(0, 300);
+  const p2Raw = await callChat({
+    systemPrompt,
+    userMessage: `Portfolio:\n${ctx}\n\n${PHASE2_PROMPT.replace('{priorSummary}', summaryBrief)}${lang}`,
+    mode: aiConfig.mode,
+    ...custom,
+  });
 
-  if (aiConfig.mode === 'quick') {
-    const parsed = parseQuickResponse(raw);
-    if (parsed) return parsed;
-  }
+  const p2 = tryParseJson(p2Raw);
+  const phase2: Partial<AnalysisReport> = {
+    shortTermActions: (p2?.shortTermActions as AnalysisReport['shortTermActions']) ?? [],
+  };
+  onPhase(2, phase2);
 
-  return parseExpertResponse(raw);
+  // ── Phase 3 ──
+  const p3Raw = await callChat({
+    systemPrompt,
+    userMessage: `Portfolio:\n${ctx}\n\n${PHASE3_PROMPT.replace('{priorSummary}', summaryBrief)}${lang}`,
+    mode: aiConfig.mode,
+    ...custom,
+  });
+
+  const p3 = tryParseJson(p3Raw);
+  const phase3: Partial<AnalysisReport> = {
+    longTermView: (p3?.longTermView as string) ?? '',
+    riskWarnings: (p3?.riskWarnings as string[]) ?? [],
+  };
+  onPhase(3, phase3);
+
+  return {
+    healthScore: phase1.healthScore!,
+    summary: phase1.summary!,
+    sectorAllocation: phase1.sectorAllocation!,
+    riskMetrics: phase1.riskMetrics!,
+    shortTermActions: phase2.shortTermActions!,
+    longTermView: phase3.longTermView!,
+    riskWarnings: phase3.riskWarnings!,
+  };
 }
 
 export async function sendFollowUp(
@@ -203,30 +197,13 @@ export async function sendFollowUp(
   aiConfig: AIConfig,
   locale: Locale,
 ): Promise<string> {
-  // For follow-up, we send the full conversation as the user message
-  const langNote = locale === 'zh' ? 'Respond in Chinese (简体中文).' : 'Respond in English.';
+  const lang = locale === 'zh' ? 'Respond in Chinese (简体中文).' : 'Respond in English.';
   const conversationText = messages.map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`).join('\n\n');
 
-  const res = await fetch(CHAT_API, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      systemPrompt: `${skillPrompt}\n\nPortfolio context:\n${portfolioContext}\n\n${langNote}\n\nYou are in a follow-up conversation. Continue advising based on the analysis already provided.`,
-      userMessage: conversationText,
-      mode: 'expert',
-      ...(aiConfig.useCustom ? {
-        customEndpoint: aiConfig.customEndpoint,
-        customApiKey: aiConfig.customApiKey,
-        customModel: aiConfig.customModelName,
-      } : {}),
-    }),
+  return callChat({
+    systemPrompt: `${skillPrompt}\n\nPortfolio context:\n${portfolioContext}\n\n${lang}\n\nYou are in a follow-up conversation. Continue advising based on the analysis already provided.`,
+    userMessage: conversationText,
+    mode: 'expert',
+    ...customKeyPayload(aiConfig),
   });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: 'Unknown error' }));
-    throw new Error((err as { error?: string }).error || `API error ${res.status}`);
-  }
-
-  const data = await res.json() as { content: string };
-  return data.content;
 }

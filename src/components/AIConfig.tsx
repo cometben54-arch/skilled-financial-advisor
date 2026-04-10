@@ -11,9 +11,10 @@ interface AIConfigProps {
   config: AIConfigType;
   onChange: (config: AIConfigType) => void;
   adminModels: AdminModelConfig[];
+  credits?: number;
 }
 
-export function AIConfigPanel({ config, onChange, adminModels }: AIConfigProps) {
+export function AIConfigPanel({ config, onChange, adminModels, credits }: AIConfigProps) {
   // Only show admin-configured models that have an API key
   const visibleModels = adminModels.filter((m) => m.apiKey && m.name);
   const { t } = useI18n();
@@ -31,8 +32,8 @@ export function AIConfigPanel({ config, onChange, adminModels }: AIConfigProps) 
     }, 1500);
   };
 
-  const freeCredits = 50;
-  const usedCredits = 12;
+  const totalCredits = 50;
+  const remainingCredits = credits ?? totalCredits;
 
   return (
     <div className="h-full flex flex-col bg-surface-900/50 border-l border-surface-800">
@@ -91,13 +92,13 @@ export function AIConfigPanel({ config, onChange, adminModels }: AIConfigProps) 
               <div className="flex items-center justify-between text-xs">
                 <span className="text-surface-400">{t('freeCredits')}</span>
                 <span className="text-surface-200 font-medium">
-                  {freeCredits - usedCredits}/{freeCredits}
+                  {remainingCredits}/{totalCredits}
                 </span>
               </div>
               <div className="mt-1.5 h-1.5 bg-surface-700 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-gradient-to-r from-primary-500 to-accent-400 rounded-full transition-all"
-                  style={{ width: `${((freeCredits - usedCredits) / freeCredits) * 100}%` }}
+                  style={{ width: `${(remainingCredits / totalCredits) * 100}%` }}
                 />
               </div>
             </div>

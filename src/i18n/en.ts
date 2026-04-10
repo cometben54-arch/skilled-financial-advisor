@@ -215,8 +215,11 @@ Your portfolio is heavily tilted toward large-cap technology (60% combined weigh
   adminSkillUntitled: 'Untitled Skill',
   adminSaving: 'Syncing...',
 
-  // AI fallback
+  // AI fallback & credits
   aiFallbackNotice: 'AI API unavailable — showing demo report. Check admin AI model configuration',
+  creditsExhausted: 'Free credits exhausted. Please enter your own API Key under "Use your own key" on the right panel to continue.',
+  loadingActions: 'Generating trading recommendations...',
+  loadingLongTerm: 'Analyzing long-term allocation...',
 
   // Report — price & detail
   currentPrice: 'Current Price',
