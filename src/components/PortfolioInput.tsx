@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Upload, FileImage, Sparkles, ChevronUp, ChevronDown, Trash2, Plus } from 'lucide-react';
 import type { Skill, PortfolioItem } from '../types';
+import { useI18n } from '../i18n';
 
 interface PortfolioInputProps {
   activeSkill: Skill | null;
@@ -19,10 +20,13 @@ export function PortfolioInput({
   isGenerating,
   hasReport,
 }: PortfolioInputProps) {
+  const { t } = useI18n();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [textInput, setTextInput] = useState('');
   const [dragActive, setDragActive] = useState(false);
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+
+  const skillDisplayName = activeSkill?.nameKey ? t(activeSkill.nameKey) : activeSkill?.name;
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -33,7 +37,6 @@ export function PortfolioInput({
 
   const handleFile = (file: File) => {
     setUploadedFileName(file.name);
-    // Simulate OCR processing — in production would call OCR service
     setTimeout(() => {
       setTextInput(
         `Detected from ${file.name}:\n\nAAPL - Apple Inc. - 25%\nMSFT - Microsoft Corp. - 20%\nNVDA - NVIDIA Corp. - 15%\nAMZN - Amazon.com Inc. - 12%\nJPM - JPMorgan Chase - 8%\nJNJ - Johnson & Johnson - 7%\nVTI - Vanguard Total Stock ETF - 8%\nBND - Vanguard Total Bond ETF - 5%`
@@ -67,10 +70,10 @@ export function PortfolioInput({
         >
           <div className="flex items-center gap-2">
             <FileImage size={14} className="text-primary-400" />
-            <span>Portfolio: {portfolio.length} positions</span>
+            <span>{t('portfolio')}: {portfolio.length} {t('positions')}</span>
             {activeSkill && (
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary-500/20 text-primary-300">
-                {activeSkill.name}
+                {skillDisplayName}
               </span>
             )}
           </div>
@@ -89,7 +92,7 @@ export function PortfolioInput({
             {activeSkill.icon}
           </div>
           <span className="text-xs text-primary-200">
-            Active: <strong>{activeSkill.name}</strong>
+            {t('activeSkillLabel')}<strong>{skillDisplayName}</strong>
           </span>
           <span className="text-[10px] text-primary-400 ml-auto">
             {activeSkill.tags.join(' · ')}
@@ -103,7 +106,7 @@ export function PortfolioInput({
             onClick={() => setIsCollapsed(true)}
             className="flex items-center gap-1 text-xs text-surface-500 hover:text-surface-300 cursor-pointer"
           >
-            <ChevronUp size={12} /> Collapse input
+            <ChevronUp size={12} /> {t('collapseInput')}
           </button>
         )}
 
@@ -120,9 +123,9 @@ export function PortfolioInput({
         >
           <Upload size={24} className="mx-auto text-surface-500 mb-2" />
           <p className="text-xs text-surface-400">
-            Drag & drop a portfolio screenshot here, or{' '}
+            {t('dragDropText')}{' '}
             <label className="text-primary-400 hover:text-primary-300 cursor-pointer underline">
-              browse
+              {t('browse')}
               <input
                 type="file"
                 accept="image/*"
@@ -132,7 +135,7 @@ export function PortfolioInput({
             </label>
           </p>
           <p className="text-[10px] text-surface-500 mt-1">
-            Supports screenshots from brokers — OCR will extract holdings
+            {t('ocrHint')}
           </p>
           {uploadedFileName && (
             <div className="mt-2 inline-flex items-center gap-1.5 text-xs text-accent-400 bg-accent-500/10 px-2.5 py-1 rounded-full">
@@ -145,12 +148,12 @@ export function PortfolioInput({
         {/* Text input */}
         <div>
           <label className="block text-xs font-medium text-surface-300 mb-1.5">
-            Portfolio & Questions
+            {t('portfolioQuestions')}
           </label>
           <textarea
             value={textInput}
             onChange={(e) => setTextInput(e.target.value)}
-            placeholder={`Enter your holdings and questions, e.g.:\n\nAAPL 25%, MSFT 20%, NVDA 15%\n\nShould I reduce my tech concentration?`}
+            placeholder={t('portfolioPlaceholder')}
             rows={4}
             className="w-full px-3 py-2.5 text-sm bg-surface-800 border border-surface-700 rounded-lg text-surface-200 placeholder-surface-500 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500/30 resize-none"
           />
@@ -160,21 +163,21 @@ export function PortfolioInput({
         <div>
           <div className="flex items-center justify-between mb-2">
             <label className="text-xs font-medium text-surface-300">
-              Holdings Detail
+              {t('holdingsDetail')}
             </label>
             <button
               onClick={addItem}
               className="flex items-center gap-1 text-[11px] text-primary-400 hover:text-primary-300 cursor-pointer"
             >
-              <Plus size={12} /> Add Position
+              <Plus size={12} /> {t('addPosition')}
             </button>
           </div>
           <div className="space-y-1.5">
             <div className="grid grid-cols-[80px_1fr_70px_80px_32px] gap-2 text-[10px] text-surface-500 px-1">
-              <span>Ticker</span>
-              <span>Name</span>
-              <span>Weight %</span>
-              <span>Cost</span>
+              <span>{t('ticker')}</span>
+              <span>{t('name')}</span>
+              <span>{t('weightPct')}</span>
+              <span>{t('cost')}</span>
               <span></span>
             </div>
             {portfolio.map((item, i) => (
@@ -234,18 +237,18 @@ export function PortfolioInput({
           {isGenerating ? (
             <>
               <div className="w-4 h-4 border-2 border-primary-300 border-t-transparent rounded-full animate-spin" />
-              Analyzing Portfolio...
+              {t('analyzingPortfolio')}
             </>
           ) : (
             <>
               <Sparkles size={16} />
-              Generate Advice
+              {t('generateAdvice')}
             </>
           )}
         </button>
         {!activeSkill && (
           <p className="text-[10px] text-surface-500 text-center -mt-2">
-            Select a skill from the marketplace to begin
+            {t('selectSkillFirst')}
           </p>
         )}
       </div>

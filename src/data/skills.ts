@@ -3,6 +3,8 @@ import type { Skill } from '../types';
 export const defaultSkills: Skill[] = [
   {
     id: 'buffett',
+    nameKey: 'skill_buffett_name',
+    descriptionKey: 'skill_buffett_desc',
     name: 'Warren Buffett',
     description: 'Value investing — focus on intrinsic value, moats, and margin of safety',
     icon: 'WB',
@@ -27,6 +29,8 @@ Provide advice in Buffett's style — folksy wisdom backed by rigorous analysis.
   },
   {
     id: 'cathie-wood',
+    nameKey: 'skill_cathie_name',
+    descriptionKey: 'skill_cathie_desc',
     name: 'Cathie Wood',
     description: 'Disruptive innovation — AI, genomics, fintech, robotics, and energy storage',
     icon: 'CW',
@@ -50,6 +54,8 @@ Provide advice emphasizing innovation exposure and convergence of technologies.`
   },
   {
     id: 'bridgewater',
+    nameKey: 'skill_bridgewater_name',
+    descriptionKey: 'skill_bridgewater_desc',
     name: 'Bridgewater All Weather',
     description: 'Risk parity — balance across economic regimes for all-weather performance',
     icon: 'BW',
@@ -73,6 +79,8 @@ Evaluate balance across economic regimes and suggest adjustments for true risk p
   },
   {
     id: 'swensen',
+    nameKey: 'skill_swensen_name',
+    descriptionKey: 'skill_swensen_desc',
     name: 'David Swensen',
     description: 'Yale Endowment Model — diversify with alternative assets and rebalance',
     icon: 'DS',
@@ -97,6 +105,8 @@ Evaluate diversification across asset classes and suggest endowment-style alloca
   },
   {
     id: 'peter-lynch',
+    nameKey: 'skill_lynch_name',
+    descriptionKey: 'skill_lynch_desc',
     name: 'Peter Lynch',
     description: 'Growth at reasonable price — invest in what you know, PEG ratio focus',
     icon: 'PL',
@@ -121,6 +131,8 @@ Classify each holding and identify potential ten-baggers or red flags.`,
   },
   {
     id: 'bogle',
+    nameKey: 'skill_bogle_name',
+    descriptionKey: 'skill_bogle_desc',
     name: 'Jack Bogle',
     description: 'Index investing — low cost, broad diversification, stay the course',
     icon: 'JB',

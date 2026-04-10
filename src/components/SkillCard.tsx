@@ -1,5 +1,6 @@
 import { Heart, BarChart3 } from 'lucide-react';
 import type { Skill } from '../types';
+import { useI18n } from '../i18n';
 
 interface SkillCardProps {
   skill: Skill;
@@ -9,6 +10,10 @@ interface SkillCardProps {
 }
 
 export function SkillCard({ skill, isActive, onSelect, onLike }: SkillCardProps) {
+  const { t } = useI18n();
+  const displayName = skill.nameKey ? t(skill.nameKey) : skill.name;
+  const displayDesc = skill.descriptionKey ? t(skill.descriptionKey) : skill.description;
+
   return (
     <button
       onClick={() => onSelect(skill)}
@@ -31,21 +36,21 @@ export function SkillCard({ skill, isActive, onSelect, onLike }: SkillCardProps)
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
             <span className="font-semibold text-sm text-surface-100 truncate">
-              {skill.name}
+              {displayName}
             </span>
             {skill.isSystem && (
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary-500/20 text-primary-300 font-medium shrink-0">
-                Official
+                {t('official')}
               </span>
             )}
             {!skill.isSystem && (
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent-500/20 text-accent-300 font-medium shrink-0">
-                Community
+                {t('community')}
               </span>
             )}
           </div>
           <p className="text-xs text-surface-400 mt-0.5 line-clamp-2 leading-relaxed">
-            {skill.description}
+            {displayDesc}
           </p>
           <div className="flex flex-wrap gap-1 mt-1.5">
             {skill.tags.map((tag) => (
@@ -61,7 +66,7 @@ export function SkillCard({ skill, isActive, onSelect, onLike }: SkillCardProps)
       </div>
       <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-surface-700/50">
         <span className="text-[11px] text-surface-500">
-          by {skill.creator}
+          {t('by')} {skill.creator}
         </span>
         <div className="flex items-center gap-3">
           <button

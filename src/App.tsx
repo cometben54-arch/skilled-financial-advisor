@@ -1,15 +1,19 @@
 import { useState, useCallback } from 'react';
-import { Compass } from 'lucide-react';
+import { Compass, Globe } from 'lucide-react';
 import type { Skill, PortfolioItem, AIConfig, ChatMessage, AnalysisReport } from './types';
 import { defaultSkills } from './data/skills';
-import { demoPortfolio, demoReport } from './data/demo';
+import { demoPortfolio } from './data/demo';
 import { SkillMarketplace } from './components/SkillMarketplace';
 import { PortfolioInput } from './components/PortfolioInput';
 import { ReportView } from './components/ReportView';
 import { AIConfigPanel } from './components/AIConfig';
 import { ChatPanel } from './components/ChatPanel';
+import { useI18n } from './i18n';
+import { getDemoReport } from './data/demo';
 
 function App() {
+  const { locale, setLocale, t } = useI18n();
+
   // Skills state
   const [skills, setSkills] = useState<Skill[]>(defaultSkills);
   const [activeSkill, setActiveSkill] = useState<Skill | null>(null);
@@ -70,11 +74,10 @@ function App() {
     setChatMessages([]);
 
     const steps = [
-      'Parsing portfolio holdings...',
-      `Loading ${activeSkill?.name || 'Skill'} mindset...`,
-      'Evaluating sector allocation...',
-      'Computing risk metrics...',
-      'Generating recommendations...',
+      t('parsingHoldings'),
+      `${t('activeSkillLabel')}${activeSkill?.name || 'Skill'}...`,
+      t('evaluatingRisk'),
+      t('generatingRecs'),
     ];
 
     let i = 0;
@@ -84,12 +87,12 @@ function App() {
         i++;
       } else {
         clearInterval(interval);
-        setReport(demoReport);
+        setReport(getDemoReport(locale));
         setIsGenerating(false);
         setLoadingStep('');
       }
     }, 700);
-  }, [activeSkill]);
+  }, [activeSkill, t, locale]);
 
   const handleChatSend = useCallback(
     (message: string) => {
@@ -102,23 +105,21 @@ function App() {
       setChatMessages((prev) => [...prev, userMsg]);
       setIsChatResponding(true);
 
-      // Simulate AI response
       setTimeout(() => {
-        const responses: Record<string, string> = {
-          default: `Great question! Based on the **${activeSkill?.name || 'current'}** framework and your portfolio analysis:\n\nYour portfolio's tech concentration at 60% does create meaningful risk. A more **conservative approach** would shift toward a 40/30/20/10 split (equities/bonds/alternatives/cash).\n\nKey adjustments:\n- Reduce NVDA and AAPL by 5% each\n- Add 5% to BND and 5% to a short-term treasury ETF (SHV)\n- Consider adding 3% international exposure via VXUS\n\nThis would bring your health score from **72 to ~81** while maintaining growth potential.`,
-        };
+        const responseTemplate = t('demo_chatResponse') as string;
+        const response = responseTemplate.replace('{skill}', activeSkill?.name || 'current');
 
         const aiMsg: ChatMessage = {
           id: `msg-${Date.now()}-ai`,
           role: 'assistant',
-          content: responses.default,
+          content: response,
           timestamp: new Date(),
         };
         setChatMessages((prev) => [...prev, aiMsg]);
         setIsChatResponding(false);
       }, 1500);
     },
-    [activeSkill]
+    [activeSkill, t]
   );
 
   return (
@@ -131,17 +132,26 @@ function App() {
           </div>
           <span className="text-sm font-bold text-surface-100">Portfolio Pilot</span>
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary-500/20 text-primary-300 font-medium">
-            BETA
+            {t('beta')}
           </span>
         </div>
         <div className="flex items-center gap-3 text-xs text-surface-400">
           <span>
-            Model: <strong className="text-surface-200">{aiConfig.useCustom ? (aiConfig.customModelName || 'Custom') : aiConfig.model}</strong>
+            {t('model')}: <strong className="text-surface-200">{aiConfig.useCustom ? (aiConfig.customModelName || 'Custom') : aiConfig.model}</strong>
           </span>
           <span className="w-px h-4 bg-surface-700" />
           <span>
-            Mode: <strong className="text-surface-200">{aiConfig.mode === 'quick' ? 'Quick' : 'Expert'}</strong>
+            {t('mode')}: <strong className="text-surface-200">{aiConfig.mode === 'quick' ? t('quick') : t('expert')}</strong>
           </span>
+          <span className="w-px h-4 bg-surface-700" />
+          {/* Language toggle */}
+          <button
+            onClick={() => setLocale(locale === 'zh' ? 'en' : 'zh')}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-surface-700 hover:border-primary-500 hover:bg-primary-500/10 text-surface-300 hover:text-primary-300 transition-all cursor-pointer"
+          >
+            <Globe size={13} />
+            <span className="font-medium">{locale === 'zh' ? 'EN' : '中文'}</span>
+          </button>
         </div>
       </header>
 
@@ -161,7 +171,6 @@ function App() {
         {/* Center — Main content */}
         <main className="flex-1 overflow-y-auto">
           <div className="max-w-3xl mx-auto p-6 space-y-4">
-            {/* Portfolio Input */}
             <PortfolioInput
               activeSkill={activeSkill}
               portfolio={portfolio}
@@ -171,17 +180,15 @@ function App() {
               hasReport={!!report}
             />
 
-            {/* Report */}
             {(isGenerating || report) && (
               <ReportView
-                report={report || demoReport}
+                report={report!}
                 isExpert={aiConfig.mode === 'expert'}
                 loading={isGenerating}
                 loadingStep={loadingStep}
               />
             )}
 
-            {/* Chat */}
             <ChatPanel
               messages={chatMessages}
               onSend={handleChatSend}

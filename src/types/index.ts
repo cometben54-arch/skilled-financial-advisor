@@ -2,6 +2,8 @@ export interface Skill {
   id: string;
   name: string;
   description: string;
+  nameKey?: string;
+  descriptionKey?: string;
   icon: string;
   tags: string[];
   creator: string;
