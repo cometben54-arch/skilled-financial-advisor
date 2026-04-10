@@ -1,6 +1,32 @@
-import { Heart, BarChart3 } from 'lucide-react';
+import { Heart, BarChart3, Download } from 'lucide-react';
 import type { Skill } from '../types';
 import { useI18n } from '../i18n';
+
+function downloadSkillMd(skill: Skill, displayName: string, displayDesc: string) {
+  const md = `# ${displayName}
+
+> ${displayDesc}
+
+## Tags
+${skill.tags.map((tag) => `- ${tag}`).join('\n')}
+
+## Creator
+${skill.creator}${skill.isSystem ? ' (Official)' : ' (Community)'}
+
+## Prompt Template
+
+\`\`\`
+${skill.promptTemplate}
+\`\`\`
+`;
+  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${skill.name.replace(/\s+/g, '_')}_skill.md`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 interface SkillCardProps {
   skill: Skill;
@@ -69,6 +95,16 @@ export function SkillCard({ skill, isActive, onSelect, onLike }: SkillCardProps)
           {t('by')} {skill.creator}
         </span>
         <div className="flex items-center gap-3">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              downloadSkillMd(skill, displayName, displayDesc);
+            }}
+            className="flex items-center gap-1 text-xs text-surface-500 hover:text-primary-400 cursor-pointer transition-colors"
+            title="Download .md"
+          >
+            <Download size={12} />
+          </button>
           <button
             onClick={(e) => {
               e.stopPropagation();

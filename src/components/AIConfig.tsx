@@ -4,22 +4,18 @@ import {
   CheckCircle2, XCircle, Loader2, Settings,
 } from 'lucide-react';
 import type { AIConfig as AIConfigType } from '../types';
+import type { AdminModelConfig } from './AdminPanel';
 import { useI18n } from '../i18n';
 
 interface AIConfigProps {
   config: AIConfigType;
   onChange: (config: AIConfigType) => void;
+  adminModels: AdminModelConfig[];
 }
 
-const DEFAULT_MODELS = [
-  { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', provider: 'Anthropic', free: true },
-  { id: 'gpt-4o', name: 'GPT-4o', provider: 'OpenAI', free: true },
-  { id: 'deepseek-v3', name: 'DeepSeek V3', provider: 'DeepSeek', free: true },
-  { id: 'claude-opus-4-6', name: 'Claude Opus 4.6', provider: 'Anthropic', free: false },
-  { id: 'gpt-4.5', name: 'GPT-4.5', provider: 'OpenAI', free: false },
-];
-
-export function AIConfigPanel({ config, onChange }: AIConfigProps) {
+export function AIConfigPanel({ config, onChange, adminModels }: AIConfigProps) {
+  // Only show admin-configured models that have an API key
+  const visibleModels = adminModels.filter((m) => m.apiKey && m.name);
   const { t } = useI18n();
   const [showCustom, setShowCustom] = useState(config.useCustom);
   const [connectionStatus, setConnectionStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
@@ -52,63 +48,61 @@ export function AIConfigPanel({ config, onChange }: AIConfigProps) {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-5">
-        {/* Model selection */}
-        <div>
-          <label className="block text-xs font-medium text-surface-300 mb-2">{t('defaultModel')}</label>
-          <div className="space-y-1.5">
-            {DEFAULT_MODELS.map((model) => (
-              <button
-                key={model.id}
-                onClick={() => onChange({ ...config, model: model.id, useCustom: false })}
-                className={`w-full flex items-center gap-3 p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
-                  config.model === model.id && !config.useCustom
-                    ? 'border-primary-500 bg-primary-500/10'
-                    : 'border-surface-700/50 bg-surface-800/30 hover:border-surface-600'
-                }`}
-              >
-                <Cpu
-                  size={14}
-                  className={
-                    config.model === model.id && !config.useCustom
-                      ? 'text-primary-400'
-                      : 'text-surface-500'
-                  }
-                />
-                <div className="flex-1 min-w-0">
-                  <span className="text-xs font-medium text-surface-200 block truncate">
-                    {model.name}
-                  </span>
-                  <span className="text-[10px] text-surface-500">{model.provider}</span>
-                </div>
-                {model.free ? (
-                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-accent-500/20 text-accent-300 font-medium">
-                    FREE
-                  </span>
-                ) : (
-                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-300 font-medium">
-                    PRO
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
+        {/* Model selection — only show if admin has configured models */}
+        {visibleModels.length > 0 && (
+          <div>
+            <label className="block text-xs font-medium text-surface-300 mb-2">{t('defaultModel')}</label>
+            <div className="space-y-1.5">
+              {visibleModels.map((model) => (
+                <button
+                  key={model.id}
+                  onClick={() => onChange({ ...config, model: model.modelId, useCustom: false })}
+                  className={`w-full flex items-center gap-3 p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
+                    config.model === model.modelId && !config.useCustom
+                      ? 'border-primary-500 bg-primary-500/10'
+                      : 'border-surface-700/50 bg-surface-800/30 hover:border-surface-600'
+                  }`}
+                >
+                  <Cpu
+                    size={14}
+                    className={
+                      config.model === model.modelId && !config.useCustom
+                        ? 'text-primary-400'
+                        : 'text-surface-500'
+                    }
+                  />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-xs font-medium text-surface-200 block truncate">
+                      {model.name}
+                    </span>
+                    <span className="text-[10px] text-surface-500">{model.provider}</span>
+                  </div>
+                  {model.isDefault && (
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-accent-500/20 text-accent-300 font-medium">
+                      DEFAULT
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
 
-          {/* Credits */}
-          <div className="mt-3 p-2.5 bg-surface-800/50 rounded-lg border border-surface-700/30">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-surface-400">{t('freeCredits')}</span>
-              <span className="text-surface-200 font-medium">
-                {freeCredits - usedCredits}/{freeCredits}
-              </span>
-            </div>
-            <div className="mt-1.5 h-1.5 bg-surface-700 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-primary-500 to-accent-400 rounded-full transition-all"
-                style={{ width: `${((freeCredits - usedCredits) / freeCredits) * 100}%` }}
-              />
+            {/* Credits */}
+            <div className="mt-3 p-2.5 bg-surface-800/50 rounded-lg border border-surface-700/30">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-surface-400">{t('freeCredits')}</span>
+                <span className="text-surface-200 font-medium">
+                  {freeCredits - usedCredits}/{freeCredits}
+                </span>
+              </div>
+              <div className="mt-1.5 h-1.5 bg-surface-700 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-primary-500 to-accent-400 rounded-full transition-all"
+                  style={{ width: `${((freeCredits - usedCredits) / freeCredits) * 100}%` }}
+                />
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Custom API */}
         <div>

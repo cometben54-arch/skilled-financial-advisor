@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
@@ -9,6 +9,40 @@ import {
 } from 'lucide-react';
 import type { AnalysisReport } from '../types';
 import { useI18n } from '../i18n';
+
+const QUOTE_KEYS = [
+  'quote_1', 'quote_2', 'quote_3', 'quote_4', 'quote_5',
+  'quote_6', 'quote_7', 'quote_8', 'quote_9', 'quote_10',
+];
+
+function ScrollingQuotes() {
+  const { t } = useI18n();
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [fade, setFade] = useState(true);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setFade(false);
+      setTimeout(() => {
+        setCurrentIndex((prev) => (prev + 1) % QUOTE_KEYS.length);
+        setFade(true);
+      }, 400);
+    }, 3500);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="w-full max-w-md text-center min-h-[3rem] flex items-center justify-center">
+      <p
+        className={`text-xs text-primary-300/80 italic leading-relaxed transition-opacity duration-400 ${
+          fade ? 'opacity-100' : 'opacity-0'
+        }`}
+      >
+        {t(QUOTE_KEYS[currentIndex])}
+      </p>
+    </div>
+  );
+}
 
 interface ReportViewProps {
   report: AnalysisReport;
@@ -41,6 +75,10 @@ export function ReportView({ report, isExpert, loading, loadingStep }: ReportVie
                 <span className={i < 2 ? 'text-surface-300' : 'text-surface-500'}>{step}</span>
               </div>
             ))}
+          </div>
+          {/* Scrolling investment quotes */}
+          <div className="mt-4 pt-4 border-t border-surface-700/30 w-full flex justify-center">
+            <ScrollingQuotes />
           </div>
         </div>
       </div>

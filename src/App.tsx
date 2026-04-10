@@ -8,11 +8,13 @@ import { PortfolioInput } from './components/PortfolioInput';
 import { ReportView } from './components/ReportView';
 import { AIConfigPanel } from './components/AIConfig';
 import { ChatPanel } from './components/ChatPanel';
+import { AdminPanel, useAdminModels } from './components/AdminPanel';
 import { useI18n } from './i18n';
 import { getDemoReport } from './data/demo';
 
 function App() {
   const { locale, setLocale, t } = useI18n();
+  const { models: adminModels } = useAdminModels();
 
   // Skills state
   const [skills, setSkills] = useState<Skill[]>(defaultSkills);
@@ -200,9 +202,12 @@ function App() {
 
         {/* Right sidebar — AI Config */}
         <aside className="w-80 shrink-0 overflow-hidden">
-          <AIConfigPanel config={aiConfig} onChange={setAIConfig} />
+          <AIConfigPanel config={aiConfig} onChange={setAIConfig} adminModels={adminModels} />
         </aside>
       </div>
+
+      {/* Admin panel — bottom right gear */}
+      <AdminPanel />
     </div>
   );
 }
