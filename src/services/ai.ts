@@ -3,197 +3,357 @@ import type { Locale } from '../i18n';
 
 const CHAT_API = '/api/chat';
 
+// ── Utilities ──
+
 function buildPortfolioContext(portfolio: PortfolioItem[]): string {
-  const lines = portfolio.map((p) => {
+  return portfolio.map((p) => {
     const parts = [`${p.ticker} (${p.name}) — ${p.weight}%`];
     if (p.costBasis) parts.push(`cost basis: $${p.costBasis}`);
     if (p.currentPrice) parts.push(`current price: $${p.currentPrice}`);
     if (p.sector) parts.push(`sector: ${p.sector}`);
     return parts.join(', ');
-  });
-  return lines.join('\n');
+  }).join('\n');
 }
 
-function buildUserMessage(portfolio: PortfolioItem[], locale: Locale, mode: 'quick' | 'expert'): string {
-  const ctx = buildPortfolioContext(portfolio);
-
-  const formatInstructions = mode === 'quick'
-    ? `Respond in JSON with this exact structure (no markdown fences around the JSON):
-{
-  "healthScore": <number 0-100>,
-  "summary": "<markdown string>",
-  "sectorAllocation": [{"name":"<sector>","value":<percent>,"color":"<hex>"}],
-  "riskMetrics": [{"label":"<metric>","value":<0-100>,"max":100}],
-  "shortTermActions": [{"action":"buy|sell|hold","ticker":"<TICKER>","detail":"<explanation>"}],
-  "longTermView": "<markdown string>",
-  "riskWarnings": ["<warning1>","<warning2>"]
-}`
-    : `Provide a comprehensive investment analysis report in **Markdown** format with the following sections:
-
-## Summary
-(2-3 paragraphs with specific price quotes and P/E ratios for key holdings)
-
-## Health Score
-(a single number 0-100, written as: HEALTH_SCORE: <number>)
-
-## Sector Allocation
-(list each sector with percentage, format: - <Sector>: <percent>%)
-
-## Risk Metrics
-(rate each on 0-100 scale: Concentration, Volatility, Diversification, Income Yield, Downside Protection)
-
-## Short-term Actions (1-3 Months)
-(for each: **[BUY/SELL/HOLD] TICKER** — detailed rationale with current price)
-
-## Long-term View (1-3 Years)
-(detailed analysis with target allocations and rebalancing path)
-
-## Risk Warnings
-(numbered list of specific, quantified risks)`;
-
-  const langNote = locale === 'zh'
-    ? '\n\nIMPORTANT: Respond entirely in Chinese (简体中文).'
-    : '\n\nIMPORTANT: Respond entirely in English.';
-
-  return `Here is my current portfolio:\n\n${ctx}\n\nPlease analyze this portfolio and provide advice.\n\n${formatInstructions}${langNote}`;
+function langNote(locale: Locale) {
+  return locale === 'zh'
+    ? '\n\nCRITICAL: Respond entirely in Chinese (简体中文). All string values must be in Chinese.'
+    : '\n\nCRITICAL: Respond entirely in English.';
 }
 
-function parseQuickResponse(raw: string): AnalysisReport | null {
-  try {
-    // Try to extract JSON from the response
-    let jsonStr = raw;
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (jsonMatch) jsonStr = jsonMatch[0];
-    const parsed = JSON.parse(jsonStr);
-    return {
-      healthScore: parsed.healthScore ?? 50,
-      summary: parsed.summary ?? '',
-      sectorAllocation: parsed.sectorAllocation ?? [],
-      riskMetrics: parsed.riskMetrics ?? [],
-      shortTermActions: parsed.shortTermActions ?? [],
-      longTermView: parsed.longTermView ?? '',
-      riskWarnings: parsed.riskWarnings ?? [],
-    };
-  } catch {
-    return null;
-  }
+function customKeyPayload(aiConfig: AIConfig) {
+  return aiConfig.useCustom ? {
+    customEndpoint: aiConfig.customEndpoint,
+    customApiKey: aiConfig.customApiKey,
+    customModel: aiConfig.customModelName,
+  } : {};
 }
 
-function parseExpertResponse(raw: string): AnalysisReport {
-  // Extract health score
-  const scoreMatch = raw.match(/HEALTH_SCORE:\s*(\d+)/i);
-  const healthScore = scoreMatch ? parseInt(scoreMatch[1], 10) : 65;
-
-  // Extract sector allocation
-  const sectorColors = ['#6366f1', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#ec4899'];
-  const sectorAllocation: AnalysisReport['sectorAllocation'] = [];
-  const sectorRegex = /[-*]\s*(.+?):\s*(\d+)%/g;
-  const sectorSection = raw.match(/## Sector Allocation[\s\S]*?(?=##|$)/i)?.[0] || raw;
-  let sectorMatch;
-  while ((sectorMatch = sectorRegex.exec(sectorSection)) !== null) {
-    sectorAllocation.push({
-      name: sectorMatch[1].trim(),
-      value: parseInt(sectorMatch[2], 10),
-      color: sectorColors[sectorAllocation.length % sectorColors.length],
-    });
-  }
-
-  // Extract risk metrics
-  const riskMetrics: AnalysisReport['riskMetrics'] = [];
-  const riskSection = raw.match(/## Risk Metrics[\s\S]*?(?=##|$)/i)?.[0] || '';
-  const riskRegex = /[-*]\s*(.+?):\s*(\d+)/g;
-  let riskMatch;
-  while ((riskMatch = riskRegex.exec(riskSection)) !== null) {
-    riskMetrics.push({ label: riskMatch[1].trim(), value: parseInt(riskMatch[2], 10), max: 100 });
-  }
-  if (riskMetrics.length === 0) {
-    riskMetrics.push(
-      { label: 'Concentration', value: 70, max: 100 },
-      { label: 'Volatility', value: 60, max: 100 },
-      { label: 'Diversification', value: 40, max: 100 },
-      { label: 'Income Yield', value: 25, max: 100 },
-      { label: 'Downside Protection', value: 35, max: 100 },
-    );
-  }
-
-  // Extract short-term actions
-  const shortTermActions: AnalysisReport['shortTermActions'] = [];
-  const actionsSection = raw.match(/## Short-term Actions[\s\S]*?(?=##|$)/i)?.[0] || '';
-  const actionRegex = /\*\*\[?(BUY|SELL|HOLD)\]?\s*([A-Z]{1,5})\*\*\s*[—-]\s*([\s\S]*?)(?=\*\*\[?(?:BUY|SELL|HOLD)|$)/gi;
-  let actionMatch;
-  while ((actionMatch = actionRegex.exec(actionsSection)) !== null) {
-    shortTermActions.push({
-      action: actionMatch[1].toLowerCase() as 'buy' | 'sell' | 'hold',
-      ticker: actionMatch[2],
-      detail: actionMatch[3].trim().replace(/\n/g, ' '),
-    });
-  }
-
-  // Extract sections
-  const summarySection = raw.match(/## Summary[\s\S]*?(?=##)/i)?.[0]?.replace(/## Summary\s*/i, '').trim() || raw.slice(0, 500);
-  const longTermSection = raw.match(/## Long-term View[\s\S]*?(?=##|$)/i)?.[0]?.replace(/## Long-term View.*?\n/i, '').trim() || '';
-  const warningsSection = raw.match(/## Risk Warnings[\s\S]*?(?=##|$)/i)?.[0] || '';
-  const riskWarnings: string[] = [];
-  const warnRegex = /\d+\.\s*([\s\S]*?)(?=\d+\.|$)/g;
-  let warnMatch;
-  while ((warnMatch = warnRegex.exec(warningsSection)) !== null) {
-    const w = warnMatch[1].trim();
-    if (w) riskWarnings.push(w);
-  }
-
-  return {
-    healthScore,
-    summary: summarySection,
-    sectorAllocation: sectorAllocation.length > 0 ? sectorAllocation : [
-      { name: 'Technology', value: 60, color: '#6366f1' },
-      { name: 'Other', value: 40, color: '#94a3b8' },
-    ],
-    riskMetrics,
-    shortTermActions,
-    longTermView: longTermSection,
-    riskWarnings,
-  };
-}
-
-export async function generateAnalysis(
-  skill: Skill,
-  portfolio: PortfolioItem[],
-  aiConfig: AIConfig,
-  locale: Locale,
-): Promise<AnalysisReport> {
-  const portfolioContext = buildPortfolioContext(portfolio);
-  const systemPrompt = skill.promptTemplate.replace('{{portfolio_context}}', portfolioContext);
-  const userMessage = buildUserMessage(portfolio, locale, aiConfig.mode);
-
+async function callChat(payload: Record<string, unknown>): Promise<string> {
   const res = await fetch(CHAT_API, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      systemPrompt,
-      userMessage,
-      mode: aiConfig.mode,
-      ...(aiConfig.useCustom ? {
-        customEndpoint: aiConfig.customEndpoint,
-        customApiKey: aiConfig.customApiKey,
-        customModel: aiConfig.customModelName,
-      } : {}),
-    }),
+    body: JSON.stringify(payload),
   });
-
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Unknown error' }));
     throw new Error((err as { error?: string }).error || `API error ${res.status}`);
   }
-
   const data = await res.json() as { content: string };
-  const raw = data.content;
+  return data.content;
+}
 
-  if (aiConfig.mode === 'quick') {
-    const parsed = parseQuickResponse(raw);
-    if (parsed) return parsed;
+// ── Credits ──
+
+const CREDITS_KEY = 'pp-credits';
+const DEFAULT_CREDITS = 50;
+
+export function getCredits(): number {
+  try {
+    const raw = localStorage.getItem(CREDITS_KEY);
+    if (raw === null) return DEFAULT_CREDITS;
+    return parseInt(raw, 10);
+  } catch {
+    return DEFAULT_CREDITS;
+  }
+}
+
+export function deductCredits(amount: number): number {
+  const current = getCredits();
+  const next = Math.max(0, current - amount);
+  localStorage.setItem(CREDITS_KEY, String(next));
+  return next;
+}
+
+export function hasEnoughCredits(mode: 'quick' | 'expert'): boolean {
+  const cost = mode === 'quick' ? 1 : 2;
+  return getCredits() >= cost;
+}
+
+// ── Robust JSON extraction ──
+
+/**
+ * Extract the first valid JSON object from text, handling:
+ * - Raw JSON
+ * - JSON wrapped in ```json fences
+ * - JSON with prose before/after
+ * - Multiple brace nesting levels
+ */
+function extractJson(raw: string): Record<string, unknown> | null {
+  // Strategy 1: Code fence
+  const fenceMatch = raw.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
+  if (fenceMatch) {
+    try {
+      return JSON.parse(fenceMatch[1].trim());
+    } catch { /* fall through */ }
   }
 
-  return parseExpertResponse(raw);
+  // Strategy 2: Balanced brace matching — find the largest valid JSON object
+  const startIdx = raw.indexOf('{');
+  if (startIdx === -1) return null;
+
+  // Try to find a balanced JSON object starting from each '{'
+  for (let i = startIdx; i < raw.length; i++) {
+    if (raw[i] !== '{') continue;
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    for (let j = i; j < raw.length; j++) {
+      const ch = raw[j];
+      if (escape) { escape = false; continue; }
+      if (ch === '\\') { escape = true; continue; }
+      if (ch === '"') { inString = !inString; continue; }
+      if (inString) continue;
+      if (ch === '{') depth++;
+      else if (ch === '}') {
+        depth--;
+        if (depth === 0) {
+          const candidate = raw.slice(i, j + 1);
+          try {
+            return JSON.parse(candidate);
+          } catch { break; }
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+// ── Fallback regex-based extraction for when JSON fails ──
+
+function extractShortTermActionsFromText(raw: string): AnalysisReport['shortTermActions'] {
+  const actions: AnalysisReport['shortTermActions'] = [];
+  // Match patterns like: **[BUY] TICKER** — detail, or BUY TICKER: detail, or - BUY TICKER - detail
+  // Also handles Chinese: 买入/卖出/持有 TICKER
+  const patterns = [
+    /\*{0,2}\[?(BUY|SELL|HOLD|买入|卖出|持有|减仓|加仓|建仓|维持)\]?\s*([A-Z]{1,5})\*{0,2}\s*[—\-:：]\s*([^\n]+(?:\n(?!\s*\*|\s*\d+\.|\s*[-*]\s*\*{0,2}\[?(?:BUY|SELL|HOLD|买入|卖出|持有|减仓|加仓|建仓|维持)).*)*)/gi,
+    /["']action["']\s*:\s*["'](buy|sell|hold)["'][^}]*?["']ticker["']\s*:\s*["']([A-Z]+)["'][^}]*?["']detail["']\s*:\s*["']([^"']+)["']/gi,
+  ];
+
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(raw)) !== null) {
+      const rawAction = match[1].toLowerCase();
+      let action: 'buy' | 'sell' | 'hold';
+      if (['buy', '买入', '加仓', '建仓'].includes(rawAction)) action = 'buy';
+      else if (['sell', '卖出', '减仓'].includes(rawAction)) action = 'sell';
+      else action = 'hold';
+
+      actions.push({
+        action,
+        ticker: match[2].toUpperCase(),
+        detail: match[3].trim().replace(/\s+/g, ' ').slice(0, 400),
+      });
+      if (actions.length >= 10) break;
+    }
+    if (actions.length > 0) break;
+  }
+
+  return actions;
+}
+
+function extractRiskWarningsFromText(raw: string): string[] {
+  const warnings: string[] = [];
+
+  // Strategy 1: Numbered list
+  const numbered = raw.match(/\d+[.、]\s*([^\n]+(?:\n(?!\s*\d+[.、]).*)*)/g);
+  if (numbered && numbered.length >= 2) {
+    for (const item of numbered) {
+      const cleaned = item.replace(/^\d+[.、]\s*/, '').trim().replace(/\s+/g, ' ');
+      if (cleaned.length > 10 && cleaned.length < 500) warnings.push(cleaned);
+    }
+  }
+
+  // Strategy 2: Bullet list
+  if (warnings.length === 0) {
+    const bullets = raw.match(/[-*•]\s*([^\n]+(?:\n(?![-*•\d]).*)*)/g);
+    if (bullets) {
+      for (const item of bullets) {
+        const cleaned = item.replace(/^[-*•]\s*/, '').trim().replace(/\s+/g, ' ');
+        if (cleaned.length > 10 && cleaned.length < 500) warnings.push(cleaned);
+      }
+    }
+  }
+
+  // Strategy 3: Lines separated by newlines
+  if (warnings.length === 0) {
+    const lines = raw.split(/\n\n+/).filter((l) => l.trim().length > 20 && l.trim().length < 500);
+    warnings.push(...lines.slice(0, 7));
+  }
+
+  return warnings.slice(0, 8);
+}
+
+function extractLongTermFromText(raw: string): string {
+  // Remove obvious JSON artifacts
+  const cleaned = raw
+    .replace(/```(?:json)?[\s\S]*?```/g, '')
+    .replace(/^\s*\{[\s\S]*?\}\s*$/gm, '')
+    .trim();
+  return cleaned.slice(0, 3000);
+}
+
+// ── Prompts ──
+
+function jsonDirective(): string {
+  return `
+
+=== RESPONSE FORMAT ===
+You MUST respond with ONLY valid JSON. No explanation, no prose, no markdown fences, nothing before or after the JSON object. Start your response with { and end with }.`;
+}
+
+const PHASE1_PROMPT = `Analyze the portfolio and output this exact JSON structure:
+{
+  "healthScore": <integer 0-100>,
+  "summary": "<2-3 paragraph analysis with specific current prices and P/E ratios for key holdings>",
+  "sectorAllocation": [{"name":"<sector name>","value":<integer percent>,"color":"#6366f1"}],
+  "riskMetrics": [{"label":"<metric name>","value":<integer 0-100>,"max":100}]
+}
+
+REQUIREMENTS:
+- Include exactly 5 risk metrics with these labels: Concentration, Volatility, Diversification, Income Yield, Downside Protection
+- Include all sectors present in the portfolio
+- Use these colors in order: #6366f1, #f59e0b, #10b981, #ef4444, #8b5cf6, #06b6d4, #f97316, #ec4899
+- Summary must be in the active skill's voice but factual`;
+
+const PHASE2_PROMPT = `Output this exact JSON structure with short-term trading actions (1-3 months):
+{
+  "shortTermActions": [
+    {"action": "buy", "ticker": "AAPL", "detail": "Rationale with current price and specific % adjustment"}
+  ]
+}
+
+REQUIREMENTS:
+- action must be exactly "buy", "sell", or "hold" (lowercase, English)
+- ticker must be uppercase letters only
+- detail must be 1-3 sentences with specific price targets and % adjustments
+- Provide 5-7 actions total
+- Prior context: {priorSummary}`;
+
+const PHASE3_PROMPT = `Output this exact JSON structure with long-term view and risk warnings:
+{
+  "longTermView": "Detailed 3-5 paragraph markdown analysis with target allocations, rebalancing path, valuation diagnosis per holding, and timeline",
+  "riskWarnings": [
+    "Specific quantified risk 1 with numbers",
+    "Specific quantified risk 2 with numbers"
+  ]
+}
+
+REQUIREMENTS:
+- longTermView: detailed markdown with section headers (use **bold** for emphasis)
+- riskWarnings: array of 5-7 specific quantified risks
+- Prior context: {priorSummary}`;
+
+// ── Main phased generation ──
+
+export type PhaseCallback = (phase: number, partial: Partial<AnalysisReport>) => void;
+
+async function callPhase(
+  systemPrompt: string,
+  userMessage: string,
+  mode: 'quick' | 'expert',
+  custom: Record<string, unknown>,
+): Promise<{ parsed: Record<string, unknown> | null; raw: string }> {
+  // Append JSON directive directly to the system prompt to override skill-level formatting
+  const effectiveSystem = systemPrompt + jsonDirective();
+
+  const raw = await callChat({
+    systemPrompt: effectiveSystem,
+    userMessage,
+    mode,
+    ...custom,
+  });
+
+  return { parsed: extractJson(raw), raw };
+}
+
+export async function generateAnalysisPhased(
+  skill: Skill,
+  portfolio: PortfolioItem[],
+  aiConfig: AIConfig,
+  locale: Locale,
+  onPhase: PhaseCallback,
+): Promise<AnalysisReport> {
+  const ctx = buildPortfolioContext(portfolio);
+  const baseSystem = skill.promptTemplate.replace('{{portfolio_context}}', ctx);
+  const lang = langNote(locale);
+  const custom = customKeyPayload(aiConfig);
+
+  // ── Phase 1 ──
+  const p1 = await callPhase(
+    baseSystem,
+    `Portfolio:\n${ctx}\n\n${PHASE1_PROMPT}${lang}`,
+    aiConfig.mode,
+    custom,
+  );
+
+  const phase1: Partial<AnalysisReport> = {
+    healthScore: (p1.parsed?.healthScore as number) ?? 65,
+    summary: (p1.parsed?.summary as string) ?? p1.raw.slice(0, 1000),
+    sectorAllocation: (p1.parsed?.sectorAllocation as AnalysisReport['sectorAllocation']) ?? [],
+    riskMetrics: (p1.parsed?.riskMetrics as AnalysisReport['riskMetrics']) ?? [],
+  };
+  onPhase(1, phase1);
+
+  // ── Phase 2 — Short-term actions ──
+  const summaryBrief = (phase1.summary ?? '').slice(0, 400);
+  let phase2: Partial<AnalysisReport> = { shortTermActions: [] };
+  try {
+    const p2 = await callPhase(
+      baseSystem,
+      `Portfolio:\n${ctx}\n\n${PHASE2_PROMPT.replace('{priorSummary}', summaryBrief)}${lang}`,
+      aiConfig.mode,
+      custom,
+    );
+
+    let actions = (p2.parsed?.shortTermActions as AnalysisReport['shortTermActions']) ?? [];
+    // Fallback: if parse gave nothing, try regex on raw text
+    if (!actions || actions.length === 0) {
+      actions = extractShortTermActionsFromText(p2.raw);
+    }
+    phase2 = { shortTermActions: actions };
+  } catch (err) {
+    console.warn('Phase 2 failed:', err);
+  }
+  onPhase(2, phase2);
+
+  // ── Phase 3 — Long-term + risks ──
+  let phase3: Partial<AnalysisReport> = { longTermView: '', riskWarnings: [] };
+  try {
+    const p3 = await callPhase(
+      baseSystem,
+      `Portfolio:\n${ctx}\n\n${PHASE3_PROMPT.replace('{priorSummary}', summaryBrief)}${lang}`,
+      aiConfig.mode,
+      custom,
+    );
+
+    let longTermView = (p3.parsed?.longTermView as string) ?? '';
+    let riskWarnings = (p3.parsed?.riskWarnings as string[]) ?? [];
+
+    // Fallback: if either is missing, extract from raw text
+    if (!longTermView || longTermView.length < 50) {
+      longTermView = extractLongTermFromText(p3.raw);
+    }
+    if (!riskWarnings || riskWarnings.length === 0) {
+      riskWarnings = extractRiskWarningsFromText(p3.raw);
+    }
+
+    phase3 = { longTermView, riskWarnings };
+  } catch (err) {
+    console.warn('Phase 3 failed:', err);
+  }
+  onPhase(3, phase3);
+
+  return {
+    healthScore: phase1.healthScore!,
+    summary: phase1.summary!,
+    sectorAllocation: phase1.sectorAllocation!,
+    riskMetrics: phase1.riskMetrics!,
+    shortTermActions: phase2.shortTermActions ?? [],
+    longTermView: phase3.longTermView ?? '',
+    riskWarnings: phase3.riskWarnings ?? [],
+  };
 }
 
 export async function sendFollowUp(
@@ -203,30 +363,13 @@ export async function sendFollowUp(
   aiConfig: AIConfig,
   locale: Locale,
 ): Promise<string> {
-  // For follow-up, we send the full conversation as the user message
-  const langNote = locale === 'zh' ? 'Respond in Chinese (简体中文).' : 'Respond in English.';
+  const lang = locale === 'zh' ? 'Respond in Chinese (简体中文).' : 'Respond in English.';
   const conversationText = messages.map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`).join('\n\n');
 
-  const res = await fetch(CHAT_API, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      systemPrompt: `${skillPrompt}\n\nPortfolio context:\n${portfolioContext}\n\n${langNote}\n\nYou are in a follow-up conversation. Continue advising based on the analysis already provided.`,
-      userMessage: conversationText,
-      mode: 'expert',
-      ...(aiConfig.useCustom ? {
-        customEndpoint: aiConfig.customEndpoint,
-        customApiKey: aiConfig.customApiKey,
-        customModel: aiConfig.customModelName,
-      } : {}),
-    }),
+  return callChat({
+    systemPrompt: `${skillPrompt}\n\nPortfolio context:\n${portfolioContext}\n\n${lang}\n\nYou are in a follow-up conversation. Continue advising based on the analysis already provided.`,
+    userMessage: conversationText,
+    mode: 'expert',
+    ...customKeyPayload(aiConfig),
   });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: 'Unknown error' }));
-    throw new Error((err as { error?: string }).error || `API error ${res.status}`);
-  }
-
-  const data = await res.json() as { content: string };
-  return data.content;
 }

@@ -213,8 +213,11 @@ export const zh = {
   adminSkillUntitled: '未命名技能包',
   adminSaving: '同步中...',
 
-  // AI fallback
+  // AI fallback & credits
   aiFallbackNotice: 'AI 接口暂不可用，当前显示的是示例报告。请检查管理员 AI 模型配置',
+  creditsExhausted: '免费额度已用完。请在右侧面板"使用自定义密钥"中填入您自己的 API Key 继续使用。',
+  loadingActions: '正在生成操作建议...',
+  loadingLongTerm: '正在分析长期配置观点...',
 
   // Report — price & detail
   currentPrice: '当前价格',
