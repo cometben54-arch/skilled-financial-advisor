@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Settings, X, Plus, Trash2, Save, Lock, Cpu, BookOpen, Pencil } from 'lucide-react';
+import { Settings, X, Plus, Trash2, Save, Lock, Cpu, BookOpen, Pencil, Eye } from 'lucide-react';
 import { useI18n } from '../i18n';
 import type { Skill } from '../types';
 import { defaultSkills as builtinSkills } from '../data/skills';
@@ -16,33 +16,43 @@ export interface AdminModelConfig {
   isDefault: boolean;
 }
 
+export interface VisionModelConfig {
+  name: string;
+  provider: string;
+  apiEndpoint: string;
+  apiKey: string;
+  modelId: string;
+}
+
 const ADMIN_PASSWORD = 'W@ng2BO';
 const CACHE_KEY_MODELS = 'pp-admin-models';
 const CACHE_KEY_SKILLS = 'pp-admin-skills';
+const CACHE_KEY_VISION = 'pp-admin-vision';
 const API_URL = '/api/config';
 
 // ── Shared API helpers ──
 
-async function fetchSharedConfig(): Promise<{ models: AdminModelConfig[]; skills: Skill[] | null }> {
+async function fetchSharedConfig(): Promise<{ models: AdminModelConfig[]; skills: Skill[] | null; visionModel: VisionModelConfig | null }> {
   try {
     const res = await fetch(API_URL);
     if (res.ok) {
       const data = await res.json();
-      // Cache locally
       if (data.models) localStorage.setItem(CACHE_KEY_MODELS, JSON.stringify(data.models));
       if (data.skills) localStorage.setItem(CACHE_KEY_SKILLS, JSON.stringify(data.skills));
+      if (data.visionModel) localStorage.setItem(CACHE_KEY_VISION, JSON.stringify(data.visionModel));
       return data;
     }
   } catch {
-    // API unavailable — fall back to localStorage
+    // fall back to localStorage
   }
   return {
     models: loadLocalModels(),
     skills: loadLocalSkills(),
+    visionModel: loadLocalVision(),
   };
 }
 
-async function saveToApi(payload: { password: string; models?: AdminModelConfig[]; skills?: Skill[] }) {
+async function saveToApi(payload: { password: string; models?: AdminModelConfig[]; skills?: Skill[]; visionModel?: VisionModelConfig | null }) {
   try {
     const res = await fetch(API_URL, {
       method: 'POST',
@@ -56,21 +66,13 @@ async function saveToApi(payload: { password: string; models?: AdminModelConfig[
 }
 
 function loadLocalModels(): AdminModelConfig[] {
-  try {
-    const raw = localStorage.getItem(CACHE_KEY_MODELS);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
+  try { const raw = localStorage.getItem(CACHE_KEY_MODELS); return raw ? JSON.parse(raw) : []; } catch { return []; }
 }
-
 function loadLocalSkills(): Skill[] | null {
-  try {
-    const raw = localStorage.getItem(CACHE_KEY_SKILLS);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
+  try { const raw = localStorage.getItem(CACHE_KEY_SKILLS); return raw ? JSON.parse(raw) : null; } catch { return null; }
+}
+function loadLocalVision(): VisionModelConfig | null {
+  try { const raw = localStorage.getItem(CACHE_KEY_VISION); return raw ? JSON.parse(raw) : null; } catch { return null; }
 }
 
 // ── Hooks for consumers (read shared config) ──
@@ -115,6 +117,10 @@ export function AdminPanel({ onSkillsChange }: { onSkillsChange: (skills: Skill[
   const [models, setModels] = useState<AdminModelConfig[]>(loadLocalModels);
   const [editingModelId, setEditingModelId] = useState<string | null>(null);
 
+  // Vision model state
+  const [visionModel, setVisionModel] = useState<VisionModelConfig | null>(loadLocalVision);
+  const [editingVision, setEditingVision] = useState(false);
+
   // Skills state
   const [skills, setSkills] = useState<Skill[]>(() => loadLocalSkills() ?? builtinSkills);
   const [editingSkillId, setEditingSkillId] = useState<string | null>(null);
@@ -126,6 +132,7 @@ export function AdminPanel({ onSkillsChange }: { onSkillsChange: (skills: Skill[
       fetchSharedConfig().then((data) => {
         if (data.models) setModels(data.models);
         if (data.skills) setSkills(data.skills);
+        if (data.visionModel !== undefined) setVisionModel(data.visionModel);
       });
     }
   }, [isAuthenticated]);
@@ -148,6 +155,15 @@ export function AdminPanel({ onSkillsChange }: { onSkillsChange: (skills: Skill[
     localStorage.setItem(CACHE_KEY_SKILLS, JSON.stringify(updated));
     setSaving(true);
     await saveToApi({ password: ADMIN_PASSWORD, skills: updated });
+    setSaving(false);
+  }, []);
+
+  const persistVisionModel = useCallback(async (vm: VisionModelConfig | null) => {
+    setVisionModel(vm);
+    if (vm) localStorage.setItem(CACHE_KEY_VISION, JSON.stringify(vm));
+    else localStorage.removeItem(CACHE_KEY_VISION);
+    setSaving(true);
+    await saveToApi({ password: ADMIN_PASSWORD, visionModel: vm });
     setSaving(false);
   }, []);
 
@@ -337,6 +353,48 @@ export function AdminPanel({ onSkillsChange }: { onSkillsChange: (skills: Skill[
                             onCancel={() => { if (!model.name) handleDeleteModel(model.id); setEditingModelId(null); }}
                           />
                         ))}
+
+                        {/* ── Vision Model (separate) ── */}
+                        <div className="mt-6 pt-4 border-t border-surface-700/50">
+                          <div className="flex items-center justify-between mb-3">
+                            <div>
+                              <h4 className="text-xs font-semibold text-surface-200 flex items-center gap-1.5">
+                                <Eye size={13} className="text-accent-400" />
+                                {t('adminVisionTitle')}
+                              </h4>
+                              <p className="text-[10px] text-surface-500 mt-0.5">{t('adminVisionDesc')}</p>
+                            </div>
+                            {!editingVision && (
+                              <button
+                                onClick={() => setEditingVision(true)}
+                                className="text-[10px] px-2.5 py-1 rounded bg-surface-700 text-surface-400 hover:text-primary-300 cursor-pointer"
+                              >
+                                {visionModel?.apiKey ? t('adminEdit') : t('adminVisionConfigure')}
+                              </button>
+                            )}
+                          </div>
+
+                          {!editingVision && visionModel?.apiKey ? (
+                            <div className="flex items-center gap-3 p-3 bg-accent-500/5 border border-accent-500/20 rounded-xl">
+                              <Eye size={14} className="text-accent-400 shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <span className="text-xs font-semibold text-surface-200">{visionModel.name || visionModel.modelId}</span>
+                                <span className="text-[10px] text-surface-500 block mt-0.5">{visionModel.provider} · {(() => { try { return new URL(visionModel.apiEndpoint).host; } catch { return visionModel.apiEndpoint; } })()}</span>
+                              </div>
+                              <button onClick={() => { persistVisionModel(null); }} className="p-1 text-surface-600 hover:text-red-400 cursor-pointer"><Trash2 size={12} /></button>
+                            </div>
+                          ) : !editingVision ? (
+                            <div className="p-3 bg-surface-800/30 border border-surface-700/50 rounded-xl text-center text-[11px] text-surface-500">
+                              {t('adminVisionNotSet')}
+                            </div>
+                          ) : (
+                            <VisionModelEditor
+                              initial={visionModel}
+                              onSave={(vm) => { persistVisionModel(vm); setEditingVision(false); }}
+                              onCancel={() => setEditingVision(false)}
+                            />
+                          )}
+                        </div>
                       </div>
                     ) : (
                       <div className="space-y-4">
@@ -534,6 +592,54 @@ function SkillRow({
           <Pencil size={10} /> {t('adminEdit')}
         </button>
         <button onClick={() => onDelete(skill.id)} className="p-1 text-surface-600 hover:text-red-400 cursor-pointer"><Trash2 size={12} /></button>
+      </div>
+    </div>
+  );
+}
+
+// ── Vision Model Editor ──
+
+function VisionModelEditor({
+  initial, onSave, onCancel,
+}: {
+  initial: VisionModelConfig | null;
+  onSave: (vm: VisionModelConfig) => void;
+  onCancel: () => void;
+}) {
+  const { t } = useI18n();
+  const [draft, setDraft] = useState<VisionModelConfig>(initial ?? {
+    name: '', provider: '', apiEndpoint: '', apiKey: '', modelId: '',
+  });
+
+  return (
+    <div className="p-4 bg-accent-500/5 border border-accent-500/20 rounded-xl space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-[11px] text-surface-400 mb-1">{t('adminModelName')}</label>
+          <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="MiniMax M2.7 Vision" className="w-full px-2.5 py-2 text-xs bg-surface-800 border border-surface-700 rounded-lg text-surface-200 placeholder-surface-500 focus:outline-none focus:border-accent-500" />
+        </div>
+        <div>
+          <label className="block text-[11px] text-surface-400 mb-1">{t('adminProvider')}</label>
+          <input value={draft.provider} onChange={(e) => setDraft({ ...draft, provider: e.target.value })} placeholder="MiniMax" className="w-full px-2.5 py-2 text-xs bg-surface-800 border border-surface-700 rounded-lg text-surface-200 placeholder-surface-500 focus:outline-none focus:border-accent-500" />
+        </div>
+      </div>
+      <div>
+        <label className="block text-[11px] text-surface-400 mb-1">{t('apiEndpoint')}</label>
+        <input value={draft.apiEndpoint} onChange={(e) => setDraft({ ...draft, apiEndpoint: e.target.value })} placeholder="https://api.minimaxi.com/v1" className="w-full px-2.5 py-2 text-xs bg-surface-800 border border-surface-700 rounded-lg text-surface-200 placeholder-surface-500 focus:outline-none focus:border-accent-500" />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-[11px] text-surface-400 mb-1">{t('apiKey')}</label>
+          <input type="password" value={draft.apiKey} onChange={(e) => setDraft({ ...draft, apiKey: e.target.value })} placeholder="sk-..." className="w-full px-2.5 py-2 text-xs bg-surface-800 border border-surface-700 rounded-lg text-surface-200 placeholder-surface-500 focus:outline-none focus:border-accent-500" />
+        </div>
+        <div>
+          <label className="block text-[11px] text-surface-400 mb-1">{t('adminModelId')}</label>
+          <input value={draft.modelId} onChange={(e) => setDraft({ ...draft, modelId: e.target.value })} placeholder="MiniMax-VL-01" className="w-full px-2.5 py-2 text-xs bg-surface-800 border border-surface-700 rounded-lg text-surface-200 placeholder-surface-500 focus:outline-none focus:border-accent-500" />
+        </div>
+      </div>
+      <div className="flex items-center gap-2 pt-1">
+        <button onClick={() => { if (draft.modelId && draft.apiKey) onSave(draft); }} disabled={!draft.modelId || !draft.apiKey} className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg bg-accent-600 text-white hover:bg-accent-500 disabled:opacity-50 cursor-pointer"><Save size={12} /> {t('adminSave')}</button>
+        <button onClick={onCancel} className="px-3 py-1.5 text-xs font-medium rounded-lg bg-surface-700 text-surface-300 hover:bg-surface-600 cursor-pointer">{t('cancel')}</button>
       </div>
     </div>
   );
