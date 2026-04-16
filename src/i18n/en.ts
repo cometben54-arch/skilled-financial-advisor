@@ -217,6 +217,10 @@ Your portfolio is heavily tilted toward large-cap technology (60% combined weigh
   adminResetSkills: 'Reset Defaults',
   adminSkillIcon: 'Icon',
   adminSkillUntitled: 'Untitled Skill',
+  adminVisionTitle: 'Vision Model (Multimodal)',
+  adminVisionDesc: 'For recognizing uploaded portfolio screenshots, configured separately from analysis model',
+  adminVisionConfigure: 'Configure',
+  adminVisionNotSet: 'No vision model configured. Image upload will use the analysis model (may not support images)',
   adminSaving: 'Syncing...',
 
   // AI fallback & credits

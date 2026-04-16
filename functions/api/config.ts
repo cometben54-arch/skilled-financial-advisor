@@ -24,11 +24,11 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   if (context.request.method === 'GET') {
     try {
       const data = await context.env.CONFIG_KV.get(CONFIG_KEY);
-      return new Response(data || '{"models":[],"skills":null}', {
+      return new Response(data || '{"models":[],"skills":null,"visionModel":null}', {
         headers: { 'Content-Type': 'application/json', ...cors },
       });
     } catch {
-      return new Response('{"models":[],"skills":null}', {
+      return new Response('{"models":[],"skills":null,"visionModel":null}', {
         headers: { 'Content-Type': 'application/json', ...cors },
       });
     }
@@ -40,6 +40,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         password: string;
         models?: unknown;
         skills?: unknown;
+        visionModel?: unknown;
       };
 
       if (body.password !== ADMIN_PASSWORD) {
@@ -51,10 +52,11 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
       // Read existing, merge
       const existing = await context.env.CONFIG_KV.get(CONFIG_KEY);
-      const current = existing ? JSON.parse(existing) : { models: [], skills: null };
+      const current = existing ? JSON.parse(existing) : { models: [], skills: null, visionModel: null };
 
       if (body.models !== undefined) current.models = body.models;
       if (body.skills !== undefined) current.skills = body.skills;
+      if (body.visionModel !== undefined) current.visionModel = body.visionModel;
 
       await context.env.CONFIG_KV.put(CONFIG_KEY, JSON.stringify(current));
 

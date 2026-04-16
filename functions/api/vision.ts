@@ -110,22 +110,33 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     } else {
       const configRaw = await context.env.CONFIG_KV.get('admin-config');
       if (!configRaw) {
-        return new Response(JSON.stringify({ error: 'No AI model configured.' }), {
+        return new Response(JSON.stringify({ error: 'No vision model configured. Admin needs to set up a Vision Model in settings.' }), {
           status: 503, headers: { 'Content-Type': 'application/json', ...cors },
         });
       }
       const config = JSON.parse(configRaw);
-      const models: AdminModel[] = config.models || [];
-      const activeModel = models.find((m) => m.isDefault) || models.find((m) => m.apiKey);
-      if (!activeModel || !activeModel.apiKey) {
-        return new Response(JSON.stringify({ error: 'No AI model with API key configured.' }), {
-          status: 503, headers: { 'Content-Type': 'application/json', ...cors },
-        });
+
+      // Use dedicated vision model if configured, otherwise fall back to default analysis model
+      const visionModel = config.visionModel;
+      if (visionModel && visionModel.apiKey) {
+        endpoint = visionModel.apiEndpoint;
+        apiKey = visionModel.apiKey;
+        modelId = visionModel.modelId;
+        provider = visionModel.provider?.toLowerCase() || 'openai';
+      } else {
+        // Fallback to analysis model
+        const models: AdminModel[] = config.models || [];
+        const activeModel = models.find((m: AdminModel) => m.isDefault) || models.find((m: AdminModel) => m.apiKey);
+        if (!activeModel || !activeModel.apiKey) {
+          return new Response(JSON.stringify({ error: 'No vision model configured. Please set up a dedicated Vision Model in admin settings.' }), {
+            status: 503, headers: { 'Content-Type': 'application/json', ...cors },
+          });
+        }
+        endpoint = activeModel.apiEndpoint;
+        apiKey = activeModel.apiKey;
+        modelId = activeModel.modelId;
+        provider = activeModel.provider?.toLowerCase() || 'openai';
       }
-      endpoint = activeModel.apiEndpoint;
-      apiKey = activeModel.apiKey;
-      modelId = activeModel.modelId;
-      provider = activeModel.provider?.toLowerCase() || 'openai';
     }
 
     const langNote = body.locale === 'zh'

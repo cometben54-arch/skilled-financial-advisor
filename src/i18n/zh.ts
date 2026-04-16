@@ -215,6 +215,10 @@ export const zh = {
   adminResetSkills: '恢复默认',
   adminSkillIcon: '图标',
   adminSkillUntitled: '未命名技能包',
+  adminVisionTitle: '图片识别模型（多模态）',
+  adminVisionDesc: '用于识别用户上传的持仓截图，与文本分析模型独立配置',
+  adminVisionConfigure: '配置',
+  adminVisionNotSet: '未配置图片识别模型。图片上传将使用文本分析模型（可能不支持图片）',
   adminSaving: '同步中...',
 
   // AI fallback & credits
