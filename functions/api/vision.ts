@@ -175,59 +175,107 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       }
 
       const data = await llmResponse.json() as { content: { type: string; text: string }[] };
-      const text = data.content?.map((c) => c.text).join('') || '';
-      return new Response(JSON.stringify({ content: text }), {
+      const rawText = data.content?.map((c) => c.text).join('') || '';
+      const cleanedText = rawText.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
+      return new Response(JSON.stringify({ content: cleanedText }), {
         headers: { 'Content-Type': 'application/json', ...cors },
       });
 
     } else {
       // ── OpenAI-compatible Vision (OpenAI, MiniMax, DeepSeek, etc.) ──
       const apiUrl = getChatUrl(endpoint);
+      const imageDataUrl = `data:${mediaType};base64,${base64Data}`;
 
-      // Build the image content block — try image_url format (standard OpenAI)
-      const imageBlock = {
-        type: 'image_url' as const,
-        image_url: { url: `data:${mediaType};base64,${base64Data}` },
-      };
-
-      const requestBody = {
-        model: modelId,
-        max_tokens: 4000,
-        messages: [{
-          role: 'user',
-          content: [
-            imageBlock,
-            { type: 'text', text: EXTRACT_PROMPT + langNote },
-          ],
-        }],
-      };
-
-      llmResponse = await fetchWithRetry(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
+      // Try multiple vision formats — different providers expect different structures
+      const formats = [
+        // Format 1: text first, image second (some providers are order-sensitive)
+        {
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'text', text: EXTRACT_PROMPT + langNote },
+              { type: 'image_url', image_url: { url: imageDataUrl, detail: 'high' } },
+            ],
+          }],
         },
-        body: JSON.stringify(requestBody),
-      });
+        // Format 2: image first (standard OpenAI order)
+        {
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'image_url', image_url: { url: imageDataUrl } },
+              { type: 'text', text: EXTRACT_PROMPT + langNote },
+            ],
+          }],
+        },
+        // Format 3: single message with image_url at top level (some CN providers)
+        {
+          messages: [
+            { role: 'user', content: EXTRACT_PROMPT + langNote },
+            { role: 'user', content: [{ type: 'image_url', image_url: { url: imageDataUrl } }] },
+          ],
+        },
+      ];
 
-      if (!llmResponse.ok) {
-        const errText = await llmResponse.text();
-        const isOverloaded = llmResponse.status === 529;
-        return new Response(JSON.stringify({
-          error: isOverloaded
-            ? 'AI 服务暂时过载，请稍后重试（已自动重试 4 次）'
-            : `Vision API error: ${llmResponse.status}`,
-          detail: errText,
-        }), {
-          status: 502, headers: { 'Content-Type': 'application/json', ...cors },
+      let lastError = '';
+      let lastStatus = 0;
+
+      for (const format of formats) {
+        const requestBody = {
+          model: modelId,
+          max_tokens: 4000,
+          ...format,
+        };
+
+        llmResponse = await fetchWithRetry(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify(requestBody),
         });
+
+        if (llmResponse.ok) {
+          const data = await llmResponse.json() as { choices?: { message: { content: string } }[] };
+          const text = data.choices?.[0]?.message?.content || '';
+
+          // Check if the model actually saw the image (not "no image" response)
+          const noImageIndicators = [
+            '未提供', '无法提取', 'no image', 'no screenshot', 'cannot see',
+            '没有提供', '未收到', '无法识别', 'not provided', 'no picture',
+          ];
+          const lowerText = text.toLowerCase();
+          const modelSawImage = !noImageIndicators.some((ind) => lowerText.includes(ind));
+
+          if (modelSawImage) {
+            // Strip <think>...</think> blocks from response
+            const cleanedText = text.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
+            return new Response(JSON.stringify({ content: cleanedText }), {
+              headers: { 'Content-Type': 'application/json', ...cors },
+            });
+          }
+          // Model didn't see the image — try next format
+          continue;
+        }
+
+        lastError = await llmResponse.text();
+        lastStatus = llmResponse.status;
+
+        // If it's a 4xx error (not retryable), try next format
+        if (llmResponse.status >= 400 && llmResponse.status < 500 && llmResponse.status !== 429) {
+          continue;
+        }
       }
 
-      const data = await llmResponse.json() as { choices?: { message: { content: string } }[] };
-      const text = data.choices?.[0]?.message?.content || '';
-      return new Response(JSON.stringify({ content: text }), {
-        headers: { 'Content-Type': 'application/json', ...cors },
+      // All formats failed
+      return new Response(JSON.stringify({
+        error: lastStatus === 529
+          ? 'AI 服务暂时过载，请稍后重试（已自动重试 4 次）'
+          : `Vision API: all image formats failed (last status: ${lastStatus})`,
+        detail: lastError,
+      }), {
+        status: 502, headers: { 'Content-Type': 'application/json', ...cors },
       });
     }
   } catch (e) {

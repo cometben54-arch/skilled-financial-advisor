@@ -139,7 +139,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       }
 
       const data = await llmResponse.json() as { content: { type: string; text: string }[] };
-      const text = data.content?.map((c) => c.text).join('') || '';
+      const rawText = data.content?.map((c) => c.text).join('') || '';
+      const text = rawText.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
 
       return new Response(JSON.stringify({ content: text }), {
         headers: { 'Content-Type': 'application/json', ...cors },
@@ -181,7 +182,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       }
 
       const data = await llmResponse.json() as { choices: { message: { content: string } }[] };
-      const text = data.choices?.[0]?.message?.content || '';
+      const rawText = data.choices?.[0]?.message?.content || '';
+      const text = rawText.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
 
       return new Response(JSON.stringify({ content: text }), {
         headers: { 'Content-Type': 'application/json', ...cors },
