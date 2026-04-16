@@ -211,42 +211,17 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         body: JSON.stringify(requestBody),
       });
 
-      // If first attempt fails, try alternative: text-only with base64 in prompt
-      // Some providers don't support multimodal content blocks
       if (!llmResponse.ok) {
-        const firstError = await llmResponse.text();
-        const firstStatus = llmResponse.status;
-
-        // Fallback: send image as base64 string reference in a text-only message
-        const fallbackBody = {
-          model: modelId,
-          max_tokens: 4000,
-          messages: [{
-            role: 'user',
-            content: `[Image attached as base64 data]\n\nBase64 image (${mediaType}):\n${base64Data.slice(0, 200)}...(truncated)\n\n${EXTRACT_PROMPT + langNote}\n\nNote: If you cannot see the image, please respond with: {"holdings":[],"rawText":"Image could not be processed. Please paste your holdings as text instead."}`,
-          }],
-        };
-
-        const fallbackResponse = await fetchWithRetry(apiUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify(fallbackBody),
+        const errText = await llmResponse.text();
+        const isOverloaded = llmResponse.status === 529;
+        return new Response(JSON.stringify({
+          error: isOverloaded
+            ? 'AI 服务暂时过载，请稍后重试（已自动重试 4 次）'
+            : `Vision API error: ${llmResponse.status}`,
+          detail: errText,
+        }), {
+          status: 502, headers: { 'Content-Type': 'application/json', ...cors },
         });
-
-        if (!fallbackResponse.ok) {
-          // Both attempts failed — return the first error with detail
-          return new Response(JSON.stringify({
-            error: `Vision API error: ${firstStatus}`,
-            detail: firstError,
-          }), {
-            status: 502, headers: { 'Content-Type': 'application/json', ...cors },
-          });
-        }
-
-        llmResponse = fallbackResponse;
       }
 
       const data = await llmResponse.json() as { choices?: { message: { content: string } }[] };
