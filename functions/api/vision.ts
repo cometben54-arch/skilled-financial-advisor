@@ -21,8 +21,8 @@ const cors = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-const RETRYABLE_STATUS = [429, 502, 503];
-const MAX_RETRIES = 2;
+const RETRYABLE_STATUS = [429, 502, 503, 529];
+const MAX_RETRIES = 4;
 
 async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -33,7 +33,8 @@ async function fetchWithRetry(url: string, init: RequestInit): Promise<Response>
     const res = await fetch(url, init);
     if (res.ok || !RETRYABLE_STATUS.includes(res.status)) return res;
     if (attempt === MAX_RETRIES) return res;
-    await sleep(Math.pow(2, attempt) * 1000);
+    // Backoff: 2s, 4s, 8s, 16s
+    await sleep(Math.pow(2, attempt + 1) * 1000);
   }
   return fetch(url, init);
 }

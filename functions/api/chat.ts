@@ -31,7 +31,7 @@ const cors = {
 };
 
 const RETRYABLE_STATUS = [429, 529, 502, 503];
-const MAX_RETRIES = 3;
+const MAX_RETRIES = 4;
 
 async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -50,8 +50,8 @@ async function fetchWithRetry(url: string, init: RequestInit): Promise<Response>
       return res;
     }
 
-    // Exponential backoff: 1s, 2s, 4s
-    const delay = Math.pow(2, attempt) * 1000;
+    // Exponential backoff: 2s, 4s, 8s, 16s
+    const delay = Math.pow(2, attempt + 1) * 1000;
     await sleep(delay);
   }
 
