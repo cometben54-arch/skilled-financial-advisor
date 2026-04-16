@@ -3,6 +3,30 @@ import { Upload, FileImage, Sparkles, ChevronUp, ChevronDown, Trash2, Plus, Load
 import type { Skill, PortfolioItem } from '../types';
 import { useI18n } from '../i18n';
 
+/** Compress image to maxDim px on longest side, JPEG quality, returns data URL */
+function compressImage(file: File, maxDim: number, quality: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > maxDim || height > maxDim) {
+        const scale = maxDim / Math.max(width, height);
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { reject(new Error('Canvas not supported')); return; }
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => reject(new Error('Failed to load image'));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
 interface PortfolioInputProps {
   activeSkill: Skill | null;
   portfolio: PortfolioItem[];
@@ -43,13 +67,9 @@ export function PortfolioInput({
     setOcrError(null);
 
     try {
-      // Convert file to base64 data URL
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
+      // Compress image client-side: resize to max 1600px and JPEG 0.8 quality
+      // This keeps the base64 payload under ~500KB instead of 5-10MB
+      const dataUrl = await compressImage(file, 1600, 0.8);
 
       // Call vision API
       const res = await fetch('/api/vision', {
@@ -59,8 +79,10 @@ export function PortfolioInput({
       });
 
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: 'Unknown error' }));
-        throw new Error((err as { error?: string }).error || `API error ${res.status}`);
+        const err = await res.json().catch(() => ({ error: 'Unknown error' })) as { error?: string; detail?: string };
+        const msg = err.error || `API error ${res.status}`;
+        const detail = err.detail ? `\n${typeof err.detail === 'string' ? err.detail.slice(0, 200) : JSON.stringify(err.detail).slice(0, 200)}` : '';
+        throw new Error(msg + detail);
       }
 
       const data = await res.json() as { content: string };
