@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Upload, FileImage, Sparkles, ChevronUp, ChevronDown, Trash2, Plus } from 'lucide-react';
+import { Upload, FileImage, Sparkles, ChevronUp, ChevronDown, Trash2, Plus, Loader2 } from 'lucide-react';
 import type { Skill, PortfolioItem } from '../types';
 import { useI18n } from '../i18n';
 
@@ -20,11 +20,13 @@ export function PortfolioInput({
   isGenerating,
   hasReport,
 }: PortfolioInputProps) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [textInput, setTextInput] = useState('');
   const [dragActive, setDragActive] = useState(false);
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+  const [isOcrProcessing, setIsOcrProcessing] = useState(false);
+  const [ocrError, setOcrError] = useState<string | null>(null);
 
   const skillDisplayName = activeSkill?.nameKey ? t(activeSkill.nameKey) : activeSkill?.name;
 
@@ -35,13 +37,71 @@ export function PortfolioInput({
     if (file) handleFile(file);
   };
 
-  const handleFile = (file: File) => {
+  const handleFile = async (file: File) => {
     setUploadedFileName(file.name);
-    setTimeout(() => {
-      setTextInput(
-        `Detected from ${file.name}:\n\nAAPL - Apple Inc. - 25%\nMSFT - Microsoft Corp. - 20%\nNVDA - NVIDIA Corp. - 15%\nAMZN - Amazon.com Inc. - 12%\nJPM - JPMorgan Chase - 8%\nJNJ - Johnson & Johnson - 7%\nVTI - Vanguard Total Stock ETF - 8%\nBND - Vanguard Total Bond ETF - 5%`
-      );
-    }, 800);
+    setIsOcrProcessing(true);
+    setOcrError(null);
+
+    try {
+      // Convert file to base64 data URL
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      // Call vision API
+      const res = await fetch('/api/vision', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: dataUrl, locale }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error((err as { error?: string }).error || `API error ${res.status}`);
+      }
+
+      const data = await res.json() as { content: string };
+      const raw = data.content;
+
+      // Try to parse JSON response
+      let parsed: { holdings?: PortfolioItem[]; rawText?: string } | null = null;
+      try {
+        const fenceMatch = raw.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
+        const jsonStr = fenceMatch ? fenceMatch[1] : raw;
+        const braceMatch = jsonStr.match(/\{[\s\S]*\}/);
+        if (braceMatch) parsed = JSON.parse(braceMatch[0]);
+      } catch { /* fall through */ }
+
+      if (parsed?.holdings && parsed.holdings.length > 0) {
+        // Update portfolio table with extracted holdings
+        onPortfolioChange(parsed.holdings.map((h) => ({
+          ticker: h.ticker || '',
+          name: h.name || '',
+          weight: h.weight || 0,
+          costBasis: h.costBasis || undefined,
+          currentPrice: h.currentPrice || undefined,
+          sector: h.sector || '',
+        })));
+        // Also put a summary in the text box
+        const summary = parsed.holdings
+          .map((h) => `${h.ticker} - ${h.name} - ${h.weight}%${h.currentPrice ? ` ($${h.currentPrice})` : ''}`)
+          .join('\n');
+        setTextInput(`${t('ocrDetected')} ${file.name}:\n\n${summary}${parsed.rawText ? `\n\n${parsed.rawText}` : ''}`);
+      } else if (parsed?.rawText) {
+        setTextInput(`${t('ocrDetected')} ${file.name}:\n\n${parsed.rawText}`);
+      } else {
+        // Couldn't parse JSON — put raw AI response in text box
+        setTextInput(`${t('ocrDetected')} ${file.name}:\n\n${raw}`);
+      }
+    } catch (err) {
+      console.warn('Vision OCR failed:', err);
+      setOcrError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setIsOcrProcessing(false);
+    }
   };
 
   const updateItem = (index: number, field: keyof PortfolioItem, value: string | number) => {
@@ -121,27 +181,40 @@ export function PortfolioInput({
               : 'border-surface-700 hover:border-surface-500'
           }`}
         >
-          <Upload size={24} className="mx-auto text-surface-500 mb-2" />
-          <p className="text-xs text-surface-400">
-            {t('dragDropText')}{' '}
-            <label className="text-primary-400 hover:text-primary-300 cursor-pointer underline">
-              {t('browse')}
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
-              />
-            </label>
-          </p>
-          <p className="text-[10px] text-surface-500 mt-1">
-            {t('ocrHint')}
-          </p>
-          {uploadedFileName && (
+          {isOcrProcessing ? (
+            <>
+              <Loader2 size={24} className="mx-auto text-primary-400 mb-2 animate-spin" />
+              <p className="text-xs text-primary-300">{t('ocrProcessing')}</p>
+              <p className="text-[10px] text-surface-500 mt-1">{t('ocrProcessingHint')}</p>
+            </>
+          ) : (
+            <>
+              <Upload size={24} className="mx-auto text-surface-500 mb-2" />
+              <p className="text-xs text-surface-400">
+                {t('dragDropText')}{' '}
+                <label className="text-primary-400 hover:text-primary-300 cursor-pointer underline">
+                  {t('browse')}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
+                  />
+                </label>
+              </p>
+              <p className="text-[10px] text-surface-500 mt-1">
+                {t('ocrHint')}
+              </p>
+            </>
+          )}
+          {uploadedFileName && !isOcrProcessing && (
             <div className="mt-2 inline-flex items-center gap-1.5 text-xs text-accent-400 bg-accent-500/10 px-2.5 py-1 rounded-full">
               <FileImage size={12} />
               {uploadedFileName}
             </div>
+          )}
+          {ocrError && (
+            <div className="mt-2 text-xs text-red-400">{t('ocrFailed')}: {ocrError}</div>
           )}
         </div>
 
