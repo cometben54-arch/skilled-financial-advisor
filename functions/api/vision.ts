@@ -21,7 +21,7 @@ const cors = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-const RETRYABLE_STATUS = [429, 529, 502, 503];
+const RETRYABLE_STATUS = [429, 502, 503];
 const MAX_RETRIES = 2;
 
 async function sleep(ms: number) {
@@ -43,8 +43,7 @@ const EXTRACT_PROMPT = `You are a portfolio data extraction tool. Look at this s
 Output ONLY valid JSON (no markdown, no explanation) in this exact format:
 {
   "holdings": [
-    {"ticker": "AAPL", "name": "Apple Inc.", "weight": 25, "costBasis": 145.00, "currentPrice": 198.36, "sector": "Technology"},
-    ...
+    {"ticker": "AAPL", "name": "Apple Inc.", "weight": 25, "costBasis": 145.00, "currentPrice": 198.36, "sector": "Technology"}
   ],
   "rawText": "<any other text visible in the image that might be relevant>"
 }
@@ -59,6 +58,20 @@ Rules:
 - If you cannot identify specific holdings, set holdings to [] and put description in rawText
 - Extract ALL visible holdings, not just the first few`;
 
+/**
+ * Determine the correct chat completions URL.
+ * If the endpoint already looks like a full URL with path, use it as-is.
+ * Otherwise append /chat/completions.
+ */
+function getChatUrl(endpoint: string): string {
+  const clean = endpoint.replace(/\/+$/, '');
+  // If it already ends with a completions-like path, use as-is
+  if (/\/(chat\/completions|completions|messages|chatcompletion)/i.test(clean)) {
+    return clean;
+  }
+  return clean + '/chat/completions';
+}
+
 export const onRequest: PagesFunction<Env> = async (context) => {
   if (context.request.method === 'OPTIONS') {
     return new Response(null, { headers: cors });
@@ -70,7 +83,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
   try {
     const body = (await context.request.json()) as {
-      image: string; // base64 data URL (e.g. "data:image/png;base64,...")
+      image: string;
       locale?: string;
       customEndpoint?: string;
       customApiKey?: string;
@@ -120,14 +133,15 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
     const isAnthropic = provider.includes('anthropic') || endpoint.includes('anthropic');
 
-    // Extract the media type and base64 data
+    // Extract media type and base64 data
     const mediaTypeMatch = body.image.match(/^data:(image\/[^;]+);base64,/);
-    const mediaType = mediaTypeMatch ? mediaTypeMatch[1] : 'image/png';
+    const mediaType = mediaTypeMatch ? mediaTypeMatch[1] : 'image/jpeg';
     const base64Data = body.image.replace(/^data:image\/[^;]+;base64,/, '');
 
     let llmResponse: Response;
 
     if (isAnthropic) {
+      // ── Anthropic Claude Vision ──
       const apiUrl = endpoint.replace(/\/+$/, '') + '/messages';
       llmResponse = await fetchWithRetry(apiUrl, {
         method: 'POST',
@@ -142,10 +156,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           messages: [{
             role: 'user',
             content: [
-              {
-                type: 'image',
-                source: { type: 'base64', media_type: mediaType, data: base64Data },
-              },
+              { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64Data } },
               { type: 'text', text: EXTRACT_PROMPT + langNote },
             ],
           }],
@@ -153,8 +164,11 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       });
 
       if (!llmResponse.ok) {
-        const err = await llmResponse.text();
-        return new Response(JSON.stringify({ error: `Vision API error: ${llmResponse.status}`, detail: err }), {
+        const errText = await llmResponse.text();
+        return new Response(JSON.stringify({
+          error: `Vision API error: ${llmResponse.status}`,
+          detail: errText,
+        }), {
           status: 502, headers: { 'Content-Type': 'application/json', ...cors },
         });
       }
@@ -166,35 +180,75 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       });
 
     } else {
-      // OpenAI-compatible vision API
-      const apiUrl = endpoint.replace(/\/+$/, '') + '/chat/completions';
+      // ── OpenAI-compatible Vision (OpenAI, MiniMax, DeepSeek, etc.) ──
+      const apiUrl = getChatUrl(endpoint);
+
+      // Build the image content block — try image_url format (standard OpenAI)
+      const imageBlock = {
+        type: 'image_url' as const,
+        image_url: { url: `data:${mediaType};base64,${base64Data}` },
+      };
+
+      const requestBody = {
+        model: modelId,
+        max_tokens: 4000,
+        messages: [{
+          role: 'user',
+          content: [
+            imageBlock,
+            { type: 'text', text: EXTRACT_PROMPT + langNote },
+          ],
+        }],
+      };
+
       llmResponse = await fetchWithRetry(apiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${apiKey}`,
         },
-        body: JSON.stringify({
+        body: JSON.stringify(requestBody),
+      });
+
+      // If first attempt fails, try alternative: text-only with base64 in prompt
+      // Some providers don't support multimodal content blocks
+      if (!llmResponse.ok) {
+        const firstError = await llmResponse.text();
+        const firstStatus = llmResponse.status;
+
+        // Fallback: send image as base64 string reference in a text-only message
+        const fallbackBody = {
           model: modelId,
           max_tokens: 4000,
           messages: [{
             role: 'user',
-            content: [
-              { type: 'image_url', image_url: { url: body.image } },
-              { type: 'text', text: EXTRACT_PROMPT + langNote },
-            ],
+            content: `[Image attached as base64 data]\n\nBase64 image (${mediaType}):\n${base64Data.slice(0, 200)}...(truncated)\n\n${EXTRACT_PROMPT + langNote}\n\nNote: If you cannot see the image, please respond with: {"holdings":[],"rawText":"Image could not be processed. Please paste your holdings as text instead."}`,
           }],
-        }),
-      });
+        };
 
-      if (!llmResponse.ok) {
-        const err = await llmResponse.text();
-        return new Response(JSON.stringify({ error: `Vision API error: ${llmResponse.status}`, detail: err }), {
-          status: 502, headers: { 'Content-Type': 'application/json', ...cors },
+        const fallbackResponse = await fetchWithRetry(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify(fallbackBody),
         });
+
+        if (!fallbackResponse.ok) {
+          // Both attempts failed — return the first error with detail
+          return new Response(JSON.stringify({
+            error: `Vision API error: ${firstStatus}`,
+            detail: firstError,
+          }), {
+            status: 502, headers: { 'Content-Type': 'application/json', ...cors },
+          });
+        }
+
+        llmResponse = fallbackResponse;
       }
 
-      const data = await llmResponse.json() as { choices: { message: { content: string } }[] };
+      const data = await llmResponse.json() as { choices?: { message: { content: string } }[] };
       const text = data.choices?.[0]?.message?.content || '';
       return new Response(JSON.stringify({ content: text }), {
         headers: { 'Content-Type': 'application/json', ...cors },

@@ -146,7 +146,11 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       });
 
     } else {
-      const apiUrl = endpoint.replace(/\/+$/, '') + '/chat/completions';
+      // Smart URL: don't append /chat/completions if endpoint already has a path
+      const cleanEndpoint = endpoint.replace(/\/+$/, '');
+      const apiUrl = /\/(chat\/completions|completions|chatcompletion)/i.test(cleanEndpoint)
+        ? cleanEndpoint
+        : cleanEndpoint + '/chat/completions';
       const llmResponse = await fetchWithRetry(apiUrl, {
         method: 'POST',
         headers: {
